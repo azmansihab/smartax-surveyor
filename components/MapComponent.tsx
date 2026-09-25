@@ -68,7 +68,7 @@ function GeomanControls({ editMode }: { editMode: boolean }) {
   const map = useMap()
 
   useEffect(() => {
-    // @ts-expect-error - leaflet-geoman menambahkan .pm ke instance map saat runtime
+    // leaflet-geoman menambahkan .pm ke instance map saat runtime
     const pm = map.pm
     if (!pm) return
 
