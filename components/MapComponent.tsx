@@ -164,15 +164,8 @@ export default function MapComponent({
       className="absolute inset-0 z-0 h-full w-full"
     >
       {basemap.type === 'osm' && (
-        <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+        <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}" />
       )}
-      {basemap.type === 'dark' && (
-        <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" />
-      )}
-      {basemap.type === 'wms' && (
-        <WMSTileLayer url={basemap.url} layers={basemap.layers} format="image/png" transparent />
-      )}
-      {basemap.type === 'xyz' && <TileLayer url={basemap.url} />}
 
       {activeTableIds.map((id) =>
         layers[id] ? (

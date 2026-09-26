@@ -12,9 +12,7 @@ import {
   Camera,
   ImageUp,
 } from 'lucide-react'
-import { useRef, useState, type ChangeEvent } from 'react'
-import { BottomSheet } from 'react-spring-bottom-sheet'
-import 'react-spring-bottom-sheet/dist/style.css'
+import { useRef, useState, useEffect, type ChangeEvent } from 'react'
 import type { BasemapConfig, SurveyProperties } from '@/components/MapComponent'
 
 const graffiti = Bungee({ subsets: ['latin'], weight: '400' })
@@ -59,6 +57,15 @@ export default function SmartaxSurveyorPage() {
   const [selectedFeature, setSelectedFeature] = useState<SurveyProperties | null>(null)
   const [kondisiValue, setKondisiValue] = useState('')
   const [photoPreview, setPhotoPreview] = useState<string | null>(null)
+  const [isMounted, setIsMounted] = useState(false) // 1. Tambahkan variabel baru ini
+
+  useEffect(() => {
+    setIsMounted(true)
+    // Beri jeda 100 milidetik sebelum membuka panel
+    setTimeout(() => {
+      setSheetOpen(true)
+    }, 100)
+  }, [])
 
   const cameraInputRef = useRef<HTMLInputElement>(null)
   const galleryInputRef = useRef<HTMLInputElement>(null)
@@ -304,128 +311,134 @@ export default function SmartaxSurveyorPage() {
         onChange={handlePhotoChange}
       />
 
-      {/* Bottom sheet: formulir survei */}
-      <BottomSheet
-        open={sheetOpen}
-        onDismiss={() => setSheetOpen(false)}
-        snapPoints={({ maxHeight }) => [maxHeight * 0.45, maxHeight * 0.85]}
-        defaultSnap={({ maxHeight }) => maxHeight * 0.45}
-        header={
-          <div className="flex items-center justify-between px-4 pb-2 pt-1">
-            <div className="flex flex-1 gap-2 overflow-x-auto">
-              {activeTables.map((id) => {
-                const tab = TABLE_TABS.find((t) => t.id === id)
-                if (!tab) return null
-                return (
-                  <span
-                    key={id}
-                    className="flex shrink-0 items-center gap-1 rounded-full bg-emerald-600 px-3 py-1 text-xs font-medium text-white"
+      {/* Bottom sheet: formulir survei (Native Tailwind) */}
+          <div
+            className={`fixed inset-x-0 bottom-0 z-[60] flex flex-col rounded-t-3xl bg-white shadow-[0_-10px_40px_rgba(0,0,0,0.15)] transition-transform duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] ${
+              sheetOpen ? 'translate-y-0' : 'translate-y-[110%]'
+            }`}
+            style={{ maxHeight: '85vh', height: '45vh' }}
+          >
+            {/* Header / Handle */}
+            <div className="flex flex-col bg-white rounded-t-3xl border-b border-slate-100">
+              <div className="flex w-full justify-center pb-2 pt-3">
+                <div className="h-1.5 w-12 rounded-full bg-slate-300" />
+              </div>
+              <div className="flex items-center justify-between px-4 pb-3 pt-1">
+                <div className="flex flex-1 gap-2 overflow-x-auto [scrollbar-width:none]">
+                  {activeTables.map((id) => {
+                    const tab = TABLE_TABS.find((t) => t.id === id)
+                    if (!tab) return null
+                    return (
+                      <span
+                        key={id}
+                        className="flex shrink-0 items-center gap-1 rounded-full bg-emerald-600 px-3 py-1 text-xs font-medium text-white"
+                      >
+                        {tab.label}
+                        <button type="button" onClick={() => toggleTable(id)} aria-label={`Hapus ${tab.label}`}>
+                          <X size={12} />
+                        </button>
+                      </span>
+                    )
+                  })}
+                </div>
+                <div className="flex items-center gap-2 pl-3">
+                  <button
+                    type="button"
+                    aria-label="Edit"
+                    className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-slate-500"
                   >
-                    {tab.label}
-                    <button type="button" onClick={() => toggleTable(id)} aria-label={`Hapus ${tab.label}`}>
-                      <X size={12} />
-                    </button>
-                  </span>
-                )
-              })}
+                    <Pencil size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Tutup"
+                    onClick={() => setSheetOpen(false)}
+                    className="flex h-8 w-8 items-center justify-center rounded-full bg-amber-400 text-white"
+                  >
+                    <ChevronDown size={16} />
+                  </button>
+                </div>
+              </div>
             </div>
-            <div className="flex items-center gap-2 pl-3">
-              <button
-                type="button"
-                aria-label="Edit"
-                className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-slate-500"
-              >
-                <Pencil size={14} />
-              </button>
-              <button
-                type="button"
-                aria-label="Tutup"
-                onClick={() => setSheetOpen(false)}
-                className="flex h-8 w-8 items-center justify-center rounded-full bg-amber-400 text-white"
-              >
-                <ChevronDown size={16} />
-              </button>
-            </div>
-          </div>
-        }
-      >
-        <div className="space-y-4 px-4 pb-6 pt-2">
-          <div>
-            <p className="text-lg font-bold text-slate-900">NOP: {selectedFeature?.nop ?? '-'}</p>
-            <p className="text-sm text-slate-500">WP: {selectedFeature?.wp ?? '-'}</p>
-          </div>
 
-          <div>
-            <label className="mb-1 block text-xs font-semibold uppercase text-slate-500">
-              Kondisi_Eksisting
-            </label>
-            <select
-              value={kondisiValue}
-              onChange={(e) => setKondisiValue(e.target.value)}
-              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
-            >
-              <option value="">Kondisi Bidang Bangunan</option>
-              {KONDISI_OPTIONS.map((opt) => (
-                <option key={opt} value={opt}>
-                  {opt}
-                </option>
-              ))}
-            </select>
-          </div>
+            {/* Konten Scrollable */}
+            <div className="flex-1 overflow-y-auto space-y-4 px-4 pb-8 pt-4 bg-white">
+              <div>
+                <p className="text-lg font-bold text-slate-900">NOP: {selectedFeature?.nop ?? '-'}</p>
+                <p className="text-sm text-slate-500">WP: {selectedFeature?.wp ?? '-'}</p>
+              </div>
 
-          <div>
-            <label className="mb-1 block text-xs font-semibold uppercase text-slate-500">Luas_Bgn</label>
-            <div className="rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-400">
-              {selectedFeature?.luas_bgn ?? 'Nilai Luas Bangunan'}
-            </div>
-          </div>
+              <div>
+                <label className="mb-1 block text-xs font-semibold uppercase text-slate-500">
+                  Kondisi_Eksisting
+                </label>
+                <select
+                  value={kondisiValue}
+                  onChange={(e) => setKondisiValue(e.target.value)}
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+                >
+                  <option value="">Kondisi Bidang Bangunan</option>
+                  {KONDISI_OPTIONS.map((opt) => (
+                    <option key={opt} value={opt}>
+                      {opt}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-          <div>
-            <label className="mb-1 block text-xs font-semibold uppercase text-slate-500">Shape_Area</label>
-            <div className="rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-700">
-              {selectedFeature?.shape_area ?? '-'}
-            </div>
-          </div>
+              <div>
+                <label className="mb-1 block text-xs font-semibold uppercase text-slate-500">Luas_Bgn</label>
+                <div className="rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-400">
+                  {selectedFeature?.luas_bgn ?? 'Nilai Luas Bangunan'}
+                </div>
+              </div>
 
-          <div>
-            <label className="mb-1 block text-xs font-semibold uppercase text-slate-500">
-              Kondisi_Eksisting
-            </label>
-            <button
-              type="button"
-              onClick={() => cameraInputRef.current?.click()}
-              className="flex h-28 w-full items-center justify-center overflow-hidden rounded-xl border-2 border-dashed border-sky-200 bg-sky-50 text-sm font-medium text-sky-700"
-            >
-              {photoPreview ? (
-                <img src={photoPreview} alt="Pratinjau foto" className="h-full w-full object-cover" />
-              ) : (
-                <span className="flex items-center gap-2">
-                  <Camera size={18} />
-                  Buka Kamera Ponsel
-                </span>
-              )}
-            </button>
+              <div>
+                <label className="mb-1 block text-xs font-semibold uppercase text-slate-500">Shape_Area</label>
+                <div className="rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-700">
+                  {selectedFeature?.shape_area ?? '-'}
+                </div>
+              </div>
 
-            <div className="mt-3 flex gap-3">
-              <button
-                type="button"
-                onClick={handleSavePhoto}
-                className="flex-1 rounded-lg bg-emerald-600 py-2.5 text-sm font-semibold text-white"
-              >
-                Simpan Foto
-              </button>
-              <button
-                type="button"
-                onClick={() => galleryInputRef.current?.click()}
-                className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-amber-400 py-2.5 text-sm font-semibold text-slate-900"
-              >
-                <ImageUp size={16} />
-                Upload Dari Galeri
-              </button>
+              <div>
+                <label className="mb-1 block text-xs font-semibold uppercase text-slate-500">
+                  Dokumentasi
+                </label>
+                <button
+                  type="button"
+                  onClick={() => cameraInputRef.current?.click()}
+                  className="flex h-28 w-full items-center justify-center overflow-hidden rounded-xl border-2 border-dashed border-sky-200 bg-sky-50 text-sm font-medium text-sky-700"
+                >
+                  {photoPreview ? (
+                    <img src={photoPreview} alt="Pratinjau foto" className="h-full w-full object-cover" />
+                  ) : (
+                    <span className="flex items-center gap-2">
+                      <Camera size={18} />
+                      Buka Kamera Ponsel
+                    </span>
+                  )}
+                </button>
+
+                <div className="mt-3 flex gap-3">
+                  <button
+                    type="button"
+                    onClick={handleSavePhoto}
+                    className="flex-1 rounded-lg bg-emerald-600 py-2.5 text-sm font-semibold text-white"
+                  >
+                    Simpan Foto
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => galleryInputRef.current?.click()}
+                    className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-amber-400 py-2.5 text-sm font-semibold text-slate-900"
+                  >
+                    <ImageUp size={16} />
+                    Upload Dari Galeri
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
-      </BottomSheet>
     </main>
   )
 }
