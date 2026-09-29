@@ -53,17 +53,6 @@ interface MapComponentProps {
 }
 
 // Pemetaan id tab UI -> nama tabel PostGIS di Supabase
-const TABLE_MAP: Record<string, string> = {
-  'polygon-utama': 'bidang_pajak_utama',
-  'polygon-kedua': 'bidang_pajak_kedua',
-  'polygon-ketiga': 'bidang_pajak_ketiga',
-}
-
-/**
- * Menjembatani plugin imperatif leaflet-geoman ke dalam React tree.
- * Butuh akses ke instance map via useMap(), sehingga harus jadi child
- * dari <MapContainer>, bukan digabung langsung ke komponen utama.
- */
 function GeomanControls({ editMode }: { editMode: boolean }) {
   const map = useMap()
 
@@ -118,7 +107,7 @@ export default function MapComponent({
     async function loadTables() {
       const entries = await Promise.all(
         activeTableIds.map(async (id) => {
-          const tableName = TABLE_MAP[id]
+          const tableName = id;
           if (!tableName) return [id, null] as const
 
           const { data, error } = await supabase.rpc('get_polygon_geojson', {
@@ -167,28 +156,36 @@ export default function MapComponent({
         <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}" />
       )}
 
-      {activeTableIds.map((id) =>
-        layers[id] ? (
-          <GeoJSON
-            key={id}
-            data={layers[id]}
-            ref={(instance: L.GeoJSON | null) => {
-              if (instance) geoJsonRefs.current[id] = instance
-            }}
-            style={() => ({
-              color: isDark ? '#34d399' : '#059669',
-              weight: 2,
-              fillColor: isDark ? '#34d399' : '#10b981',
-              fillOpacity: 0.25,
-            })}
-            onEachFeature={(feature, layer) => {
-              layer.on('click', () =>
-                handleFeatureClick(feature as Feature<Geometry, SurveyProperties>),
-              )
-            }}
-          />
-        ) : null,
-      )}
+      {activeTableIds.map((id) => {
+  const layerData = layers[id];
+  if (!layerData) return null;
+
+  // Trik kunci: Menambahkan panjang string JSON ke dalam key 
+  // memaksa React Leaflet merender ulang jika data/statusnya berubah
+  const uniqueKey = `${id}-${JSON.stringify(layerData).length}`;
+
+  return (
+    <GeoJSON
+      key={uniqueKey}
+      data={layerData}
+      ref={(instance: L.GeoJSON | null) => {
+        if (instance) geoJsonRefs.current[id] = instance;
+      }}
+      style={() => ({
+        color: isDark ? '#34d399' : '#059669',
+        weight: 2,
+        fillColor: isDark ? '#34d399' : '#10b981',
+        fillOpacity: 0.4,
+      })}
+      onEachFeature={(feature, layer) => {
+        // Mengirimkan data atribut poligon ke formulir saat diklik
+        layer.on('click', () => {
+          handleFeatureClick(feature as any);
+        });
+      }}
+    />
+  );
+})}
 
       {/* Peta dasar tetap read-only; hanya geometri di layer GeoJSON di atas
           yang bisa diedit, dan hanya ketika Mode Edit Spasial aktif. */}

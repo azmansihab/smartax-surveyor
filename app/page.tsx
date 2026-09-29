@@ -2,6 +2,7 @@
 
 import dynamic from 'next/dynamic'
 import { Bungee } from 'next/font/google'
+import { createClient } from '@supabase/supabase-js'
 import {
   Sun,
   Moon,
@@ -19,45 +20,120 @@ const graffiti = Bungee({ subsets: ['latin'], weight: '400' })
 
 // react-leaflet menyentuh window/document, jadi wajib dimuat tanpa SSR
 const MapComponent = dynamic(() => import('@/components/MapComponent'), {
-  ssr: false,
   loading: () => (
-    <div className="absolute inset-0 z-0 flex items-center justify-center bg-slate-100">
-      <span className="text-sm font-medium text-slate-400">Memuat peta…</span>
+    <div className="flex items-center justify-center h-[400px]">
+      <span className="text-sm font-medium text-slate-400">Memuat peta...</span>
     </div>
   ),
-})
+  ssr: false
+});
 
 interface TableTab {
   id: string
   label: string
 }
 
-const TABLE_TABS: TableTab[] = [
-  { id: 'polygon-utama', label: 'Nama Tabel Data Polygon' },
-  { id: 'polygon-kedua', label: 'Tabel Data Polygon Kedua' },
-  { id: 'polygon-ketiga', label: 'Tabel Data Polygon Ketiga' },
-]
-
-const KONDISI_OPTIONS = ['Baik', 'Rusak Ringan', 'Rusak Sedang', 'Rusak Berat', 'Lahan Kosong']
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 export default function SmartaxSurveyorPage() {
-  const [isDark, setIsDark] = useState(false)
-  const [panelOpen, setPanelOpen] = useState(false)
-  const [panelTab, setPanelTab] = useState<'layers' | 'basemap'>('layers')
-  const [editMode, setEditMode] = useState(false)
+  const [isDark, setIsDark] = useState(false);
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [panelTab, setPanelTab] = useState<'layers' | 'basemap'>('layers');
 
+  // 1. Buat state baru untuk menyimpan tab tabel yang dinamis
+  const [tableTabs, setTableTabs] = useState<TableTab[]>([]);
+
+  // 2. Tarik daftar nama SHP/tabel saat web pertama kali dibuka
+  useEffect(() => {
+    async function fetchTableNames() {
+      // Pastikan Anda sudah mengimpor client supabase di file ini
+      const { data, error } = await supabase.rpc('get_spatial_tables');
+
+      if (data && !error) {
+        // Mengubah format array dari Supabase menjadi format yang dibaca UI
+        const dynamicTabs = data.map((namaTabel: string) => ({
+          id: namaTabel,       // ID sistem menggunakan nama tabel (contoh: bidang_pajak_utama)
+          label: namaTabel     // Judul di layar juga menggunakan nama tabel
+        }));
+
+        setTableTabs(dynamicTabs);
+      }
+    }
+
+    fetchTableNames();
+  }, []);
+
+  const KONDISI_OPTIONS = ['Baik', 'Rusak Ringan', 'Rusak Sedang', 'Rusak Berat', 'Lahan Kosong']
+  const [editMode, setEditMode] = useState(false);
   const [basemap, setBasemap] = useState<BasemapConfig>({ type: 'osm' })
   const [wmsUrl, setWmsUrl] = useState('')
   const [wmsLayers, setWmsLayers] = useState('')
   const [customXyzUrl, setCustomXyzUrl] = useState('')
 
-  const [activeTables, setActiveTables] = useState<string[]>(['polygon-utama'])
+  const [activeTables, setActiveTables] = useState<string[]>(['bidang_pajak_utama'])
 
   const [sheetOpen, setSheetOpen] = useState(false)
+  const [sheetSize, setSheetSize] = useState<'half' | 'full'>('half');
   const [selectedFeature, setSelectedFeature] = useState<SurveyProperties | null>(null)
+  const [viewingTableId, setViewingTableId] = useState<string | null>(null);
+  const [layerTableData, setLayerTableData] = useState<any[]>([]);
+  const [isLoadingTable, setIsLoadingTable] = useState(false);
+
+  // 1. State untuk menyimpan data form yang sedang diedit
+  const [formData, setFormData] = useState<Record<string, any>>({});
+
+  // 2. Mengisi form dengan data dari poligon yang diklik
+useEffect(() => {
+    if (selectedFeature) {
+      setFormData(selectedFeature as any);
+    }
+  }, [selectedFeature]);
+
+  // 3. Fungsi untuk menangani ketikan pada form
+  const handleInputChange = (kolom: string, nilaiBaru: string) => {
+    setFormData(prev => ({
+      ...prev,
+      [kolom]: nilaiBaru
+    }));
+  };
+
+  // 4. Fungsi untuk menyimpan data ke Supabase
+  const handleSimpanData = async () => {
+    if (!selectedFeature || activeTables.length === 0) return;
+
+    const namaTabelAktif = activeTables[0];
+
+    // CATATAN: Ganti 'id' dengan Primary Key dari tabel Anda (biasanya 'id', 'gid', atau 'OBJECTID' jika hasil import QGIS)
+    const pkColumn = 'id'; 
+    const idPoligon = (selectedFeature as any)[pkColumn];
+
+    if (!idPoligon) {
+      alert(`Gagal: Kolom Primary Key '${pkColumn}' tidak ditemukan.`);
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from(namaTabelAktif)
+        .update(formData)
+        .eq(pkColumn, idPoligon);
+
+      if (error) throw error;
+
+      alert('Data lapangan berhasil diperbarui!');
+      setEditMode(false); // Keluar dari mode edit setelah sukses
+
+    } catch (error: any) {
+      alert('Gagal menyimpan data: ' + error.message);
+    }
+  };
+
   const [kondisiValue, setKondisiValue] = useState('')
   const [photoPreview, setPhotoPreview] = useState<string | null>(null)
   const [isMounted, setIsMounted] = useState(false) // 1. Tambahkan variabel baru ini
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
 
   useEffect(() => {
     setIsMounted(true)
@@ -71,20 +147,66 @@ export default function SmartaxSurveyorPage() {
   const galleryInputRef = useRef<HTMLInputElement>(null)
 
   const toggleTable = (id: string) => {
-    setActiveTables((prev) => (prev.includes(id) ? prev.filter((t) => t !== id) : [...prev, id]))
+    setActiveTables((prev) => {
+      const isActive = prev.includes(id);
+      
+      // Jika layer sedang dimatikan...
+      if (isActive) {
+        // 1. Bersihkan tabel raksasa jika sedang buka tabel ini
+        if (viewingTableId === id) {
+          setViewingTableId(null);
+        }
+        
+        // 2. BERSIHKAN DATA POLIGON (Ini yang memperbaiki bug form nyangkut)
+        setSelectedFeature(null);
+        
+        // 3. Jika tidak ada layer lain yang aktif, tutup sekalian panel bawahnya
+        if (prev.length === 1) {
+           setSheetOpen(false);
+        }
+        
+        return prev.filter((t) => t !== id);
+      } 
+      // Jika layer sedang dihidupkan
+      else {
+        return [...prev, id];
+      }
+    });
   }
 
+  // Fungsi baru: Memuat data atribut tabel utuh saat pill hijau diklik
+  const handleViewTable = async (tableId: string) => {
+    setViewingTableId(tableId);
+    setSelectedFeature(null); // Sembunyikan form detail poligon
+    setSheetOpen(true); // Buka panel bawah
+    setIsLoadingTable(true);
+
+    try {
+      // Ambil atribut langsung dari tabel (batasi 100 agar tidak berat)
+      const { data, error } = await supabase.from(tableId).select('*').limit(100);
+      if (error) throw error;
+      setLayerTableData(data || []);
+    } catch (err: any) {
+      console.error("Gagal memuat tabel:", err.message);
+    } finally {
+      setIsLoadingTable(false);
+    }
+  };
+
+  // Fungsi klik yang sudah diperbarui (menimpa baris 152-157 Anda)
   const handleFeatureSelect = (properties: SurveyProperties) => {
     setSelectedFeature(properties)
     setKondisiValue(properties.kondisi_eksisting ?? '')
     setPhotoPreview(null)
+    setViewingTableId(null) // <--- Ini yang menutup tabel raksasa saat poligon diklik
     setSheetOpen(true)
   }
 
-  const handlePhotoChange = (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    setPhotoPreview(URL.createObjectURL(file))
+  const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const file = e.target.files?.[0]
+  if (!file) return
+  setPhotoFile(file) // Tambahkan baris ini
+  setPhotoPreview(URL.createObjectURL(file))
   }
 
   const handleSavePhoto = async () => {
@@ -119,9 +241,8 @@ export default function SmartaxSurveyorPage() {
             type="button"
             onClick={() => setIsDark(false)}
             aria-label="Mode terang"
-            className={`flex h-9 w-9 items-center justify-center rounded-xl transition ${
-              !isDark ? 'bg-white shadow' : 'text-slate-400'
-            }`}
+            className={`flex h-9 w-9 items-center justify-center rounded-xl transition ${!isDark ? 'bg-white shadow' : 'text-slate-400'
+              }`}
           >
             <Sun size={18} className={!isDark ? 'text-amber-500' : ''} />
           </button>
@@ -129,9 +250,8 @@ export default function SmartaxSurveyorPage() {
             type="button"
             onClick={() => setIsDark(true)}
             aria-label="Mode gelap"
-            className={`flex h-9 w-9 items-center justify-center rounded-xl transition ${
-              isDark ? 'bg-white shadow' : 'text-slate-400'
-            }`}
+            className={`flex h-9 w-9 items-center justify-center rounded-xl transition ${isDark ? 'bg-white shadow' : 'text-slate-400'
+              }`}
           >
             <Moon size={18} className={isDark ? 'text-slate-700' : ''} />
           </button>
@@ -154,18 +274,16 @@ export default function SmartaxSurveyorPage() {
             <button
               type="button"
               onClick={() => setPanelTab('layers')}
-              className={`flex-1 py-3 text-sm font-semibold ${
-                panelTab === 'layers' ? 'border-b-2 border-slate-900 text-slate-900' : 'text-slate-400'
-              }`}
+              className={`flex-1 py-3 text-sm font-semibold ${panelTab === 'layers' ? 'border-b-2 border-slate-900 text-slate-900' : 'text-slate-400'
+                }`}
             >
               Layers
             </button>
             <button
               type="button"
               onClick={() => setPanelTab('basemap')}
-              className={`flex-1 py-3 text-sm font-semibold ${
-                panelTab === 'basemap' ? 'border-b-2 border-slate-900 text-slate-900' : 'text-slate-400'
-              }`}
+              className={`flex-1 py-3 text-sm font-semibold ${panelTab === 'basemap' ? 'border-b-2 border-slate-900 text-slate-900' : 'text-slate-400'
+                }`}
             >
               Basemap
             </button>
@@ -174,29 +292,10 @@ export default function SmartaxSurveyorPage() {
           <div className="max-h-80 space-y-3 overflow-y-auto p-4">
             {panelTab === 'layers' && (
               <>
-                <div className="flex items-center justify-between text-sm text-slate-700">
-                  <span>Mode Edit Spasial</span>
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={editMode}
-                    onClick={() => setEditMode((v) => !v)}
-                    className={`h-6 w-11 rounded-full transition ${editMode ? 'bg-emerald-500' : 'bg-slate-300'}`}
-                  >
-                    <span
-                      className={`block h-5 w-5 translate-y-0.5 rounded-full bg-white shadow transition ${
-                        editMode ? 'translate-x-5' : 'translate-x-0.5'
-                      }`}
-                    />
-                  </button>
-                </div>
-                <p className="text-xs text-slate-400">
-                  Aktifkan untuk mengedit geometri langsung di peta (snapping otomatis via
-                  leaflet-geoman).
-                </p>
+
 
                 <div className="space-y-2 pt-2">
-                  {TABLE_TABS.map((t) => (
+                  {tableTabs.map((t) => (
                     <label key={t.id} className="flex items-center gap-2 text-sm text-slate-700">
                       <input
                         type="checkbox"
@@ -216,18 +315,16 @@ export default function SmartaxSurveyorPage() {
                 <button
                   type="button"
                   onClick={() => setBasemap({ type: 'osm' })}
-                  className={`w-full rounded-lg px-3 py-2 text-left text-sm ${
-                    basemap.type === 'osm' ? 'bg-emerald-50 text-emerald-700' : 'text-slate-600'
-                  }`}
+                  className={`w-full rounded-lg px-3 py-2 text-left text-sm ${basemap.type === 'osm' ? 'bg-emerald-50 text-emerald-700' : 'text-slate-600'
+                    }`}
                 >
                   OpenStreetMap
                 </button>
                 <button
                   type="button"
                   onClick={() => setBasemap({ type: 'dark' })}
-                  className={`w-full rounded-lg px-3 py-2 text-left text-sm ${
-                    basemap.type === 'dark' ? 'bg-emerald-50 text-emerald-700' : 'text-slate-600'
-                  }`}
+                  className={`w-full rounded-lg px-3 py-2 text-left text-sm ${basemap.type === 'dark' ? 'bg-emerald-50 text-emerald-700' : 'text-slate-600'
+                    }`}
                 >
                   Dark Basemap
                 </button>
@@ -281,18 +378,18 @@ export default function SmartaxSurveyorPage() {
 
       {/* Bilah bawah: navigasi tabel (pill hijau, scroll horizontal) */}
       <div className="absolute inset-x-0 bottom-24 z-40 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {TABLE_TABS.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            onClick={() => toggleTable(t.id)}
-            className={`shrink-0 whitespace-nowrap rounded-full px-4 py-2 text-sm font-medium shadow transition ${
-              activeTables.includes(t.id) ? 'bg-emerald-600 text-white' : 'bg-emerald-600/40 text-white/90'
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
+        {tableTabs
+          .filter((t) => activeTables.includes(t.id)) // Baris ini memastikan HANYA layer yang dicentang yang muncul
+          .map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => handleViewTable(t.id)} // <--- UBAH BARIS INI
+              className="shrink-0 whitespace-nowrap rounded-full bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-md transition hover:bg-emerald-700"
+            >
+              {t.label}
+            </button>
+          ))}
       </div>
 
       <input
@@ -312,133 +409,254 @@ export default function SmartaxSurveyorPage() {
       />
 
       {/* Bottom sheet: formulir survei (Native Tailwind) */}
-          <div
-            className={`fixed inset-x-0 bottom-0 z-[60] flex flex-col rounded-t-3xl bg-white shadow-[0_-10px_40px_rgba(0,0,0,0.15)] transition-transform duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] ${
-              sheetOpen ? 'translate-y-0' : 'translate-y-[110%]'
-            }`}
-            style={{ maxHeight: '85vh', height: '45vh' }}
+      <div
+        className={`fixed inset-x-0 bottom-0 z-[60] flex flex-col rounded-t-3xl bg-white shadow-[0_-10px_40px_rgba(0,0,0,0.15)] ${
+          sheetOpen ? 'translate-y-0' : 'translate-y-[110%]'
+        }`}
+        style={{ 
+          // INI YANG MEMBUATNYA BISA MEMANJANG/MEMENDEK
+          height: sheetSize === 'full' ? '85vh' : '45vh',
+          transition: 'height 0.4s ease-in-out, transform 0.5s cubic-bezier(0.32,0.72,0,1)'
+        }}
+      >
+        {/* Header / Handle */}
+        <div className="flex flex-col bg-white rounded-t-3xl border-b border-slate-100">
+          
+          {/* Tuas abu-abu yang BISA DIKLIK (Area klik sudah saya perbesar agar mudah dipencet) */}
+          <button 
+            type="button"
+            className="flex w-full justify-center py-4 cursor-pointer hover:bg-slate-50 active:bg-slate-100 focus:outline-none"
+            onClick={(e) => {
+              e.preventDefault();
+              setSheetSize(prev => prev === 'half' ? 'full' : 'half');
+            }}
           >
-            {/* Header / Handle */}
-            <div className="flex flex-col bg-white rounded-t-3xl border-b border-slate-100">
-              <div className="flex w-full justify-center pb-2 pt-3">
-                <div className="h-1.5 w-12 rounded-full bg-slate-300" />
-              </div>
-              <div className="flex items-center justify-between px-4 pb-3 pt-1">
-                <div className="flex flex-1 gap-2 overflow-x-auto [scrollbar-width:none]">
-                  {activeTables.map((id) => {
-                    const tab = TABLE_TABS.find((t) => t.id === id)
-                    if (!tab) return null
-                    return (
-                      <span
-                        key={id}
-                        className="flex shrink-0 items-center gap-1 rounded-full bg-emerald-600 px-3 py-1 text-xs font-medium text-white"
-                      >
-                        {tab.label}
-                        <button type="button" onClick={() => toggleTable(id)} aria-label={`Hapus ${tab.label}`}>
-                          <X size={12} />
-                        </button>
-                      </span>
-                    )
-                  })}
-                </div>
-                <div className="flex items-center gap-2 pl-3">
-                  <button
-                    type="button"
-                    aria-label="Edit"
-                    className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-slate-500"
+            <div className="h-2 w-16 rounded-full bg-slate-300 transition-colors" />
+          </button>
+
+          <div className="flex items-center justify-between px-4 pb-3 pt-1">
+            <div className="flex flex-1 gap-2 overflow-x-auto [scrollbar-width:none]">
+              {activeTables.map((id) => {
+                const tab = tableTabs.find((t) => t.id === id)
+                if (!tab) return null
+                return (
+                  <span
+                    key={id}
+                    className="flex shrink-0 items-center gap-1 rounded-full bg-emerald-600 px-3 py-1 text-xs font-medium text-white"
                   >
-                    <Pencil size={14} />
-                  </button>
-                  <button
-                    type="button"
-                    aria-label="Tutup"
-                    onClick={() => setSheetOpen(false)}
-                    className="flex h-8 w-8 items-center justify-center rounded-full bg-amber-400 text-white"
-                  >
-                    <ChevronDown size={16} />
-                  </button>
-                </div>
-              </div>
+                    {tab.label}
+                    <button type="button" onClick={() => toggleTable(id)} aria-label={`Hapus ${tab.label}`}>
+                      <X size={12} />
+                    </button>
+                  </span>
+                )
+              })}
             </div>
-
-            {/* Konten Scrollable */}
-            <div className="flex-1 overflow-y-auto space-y-4 px-4 pb-8 pt-4 bg-white">
-              <div>
-                <p className="text-lg font-bold text-slate-900">NOP: {selectedFeature?.nop ?? '-'}</p>
-                <p className="text-sm text-slate-500">WP: {selectedFeature?.wp ?? '-'}</p>
-              </div>
-
-              <div>
-                <label className="mb-1 block text-xs font-semibold uppercase text-slate-500">
-                  Kondisi_Eksisting
-                </label>
-                <select
-                  value={kondisiValue}
-                  onChange={(e) => setKondisiValue(e.target.value)}
-                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
-                >
-                  <option value="">Kondisi Bidang Bangunan</option>
-                  {KONDISI_OPTIONS.map((opt) => (
-                    <option key={opt} value={opt}>
-                      {opt}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="mb-1 block text-xs font-semibold uppercase text-slate-500">Luas_Bgn</label>
-                <div className="rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-400">
-                  {selectedFeature?.luas_bgn ?? 'Nilai Luas Bangunan'}
-                </div>
-              </div>
-
-              <div>
-                <label className="mb-1 block text-xs font-semibold uppercase text-slate-500">Shape_Area</label>
-                <div className="rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-700">
-                  {selectedFeature?.shape_area ?? '-'}
-                </div>
-              </div>
-
-              <div>
-                <label className="mb-1 block text-xs font-semibold uppercase text-slate-500">
-                  Dokumentasi
-                </label>
-                <button
-                  type="button"
-                  onClick={() => cameraInputRef.current?.click()}
-                  className="flex h-28 w-full items-center justify-center overflow-hidden rounded-xl border-2 border-dashed border-sky-200 bg-sky-50 text-sm font-medium text-sky-700"
-                >
-                  {photoPreview ? (
-                    <img src={photoPreview} alt="Pratinjau foto" className="h-full w-full object-cover" />
-                  ) : (
-                    <span className="flex items-center gap-2">
-                      <Camera size={18} />
-                      Buka Kamera Ponsel
-                    </span>
-                  )}
-                </button>
-
-                <div className="mt-3 flex gap-3">
-                  <button
-                    type="button"
-                    onClick={handleSavePhoto}
-                    className="flex-1 rounded-lg bg-emerald-600 py-2.5 text-sm font-semibold text-white"
-                  >
-                    Simpan Foto
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => galleryInputRef.current?.click()}
-                    className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-amber-400 py-2.5 text-sm font-semibold text-slate-900"
-                  >
-                    <ImageUp size={16} />
-                    Upload Dari Galeri
-                  </button>
-                </div>
-              </div>
+            <div className="flex items-center gap-2 pl-3">
+              <button
+                type="button"
+                aria-label="Edit"
+                onClick={() => setEditMode((v) => !v)} // Tambahkan event onClick ini
+                className={`flex h-8 w-8 items-center justify-center rounded-full transition-colors ${
+                  editMode ? 'bg-blue-600 text-white shadow-md' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                }`}
+              >
+                <Pencil size={14} />
+              </button>
+              <button
+                type="button"
+                aria-label="Tutup"
+                onClick={() => setSheetOpen(false)}
+                className="flex h-8 w-8 items-center justify-center rounded-full bg-amber-400 text-white"
+              >
+                <ChevronDown size={16} />
+              </button>
             </div>
           </div>
-    </main>
+        </div>
+
+        {/* Konten Scrollable */}
+        <div className="flex flex-col gap-4 mt-4 px-4 overflow-y-auto pb-20 bg-white">
+          
+{/* === MODE 1: LIHAT TABEL KESELURUHAN (ARCGIS STYLE) === */}
+          {viewingTableId && !selectedFeature && (
+            <div className="flex flex-col gap-2">
+              <h3 className="font-bold text-slate-800 uppercase border-b pb-2">
+                Tabel Atribut: {viewingTableId.replace(/_/g, ' ')}
+              </h3>
+              {isLoadingTable ? (
+                <div className="py-4 text-center text-sm font-medium text-slate-500 animate-pulse">
+                  Mengambil data dari server...
+                </div>
+              ) : (
+                <div className="overflow-x-auto rounded-lg border border-slate-200">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="bg-slate-100">
+                        {layerTableData.length > 0 && 
+                          Object.keys(layerTableData[0])
+                            // Sembunyikan kolom geom agar tabel tidak error karena isinya terlalu panjang
+                            .filter(k => k.toLowerCase() !== 'geom') 
+                            .map(key => (
+                            <th key={key} className="border-b border-r border-slate-200 p-2 uppercase whitespace-nowrap font-semibold text-slate-700">
+                              {key.replace(/_/g, ' ')}
+                            </th>
+                          ))
+                        }
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {layerTableData.map((row, idx) => (
+                        <tr key={idx} className="hover:bg-emerald-50 transition-colors">
+                          {Object.keys(row)
+                            .filter(k => k.toLowerCase() !== 'geom')
+                            .map(key => (
+                            <td key={key} className="border-b border-r border-slate-200 p-2 whitespace-nowrap text-slate-600">
+                              {row[key] !== null ? String(row[key]) : '-'}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {layerTableData.length === 0 && (
+                    <p className="text-sm text-slate-500 p-4 text-center">Tidak ada data di tabel ini.</p>
+                  )}
+                </div>
+              )}
+          </div>
+        )}
+          
+          {/* HEADER FORM: NOP dan Nama WP */}
+          {selectedFeature && (
+            <div className="mb-2 pb-4 border-b border-slate-200">
+              {/* Pastikan nama properti NOP dan NAMA_WP sesuai dengan huruf besar/kecil di database Anda */}
+              <p className="text-lg font-bold text-slate-900">
+                NOP: {formData['NOP'] || formData['nop'] || '-'}
+              </p>
+              <p className="text-sm font-medium text-slate-600 uppercase">
+                WP: {formData['nama_wp_sp'] || formData['NAMA_WP_SP'] || '-'}
+              </p>
+            </div>
+          )}
+
+          {/* DAFTAR ATRIBUT DINAMIS */}
+          {selectedFeature && Object.keys(formData).map((namaKolom) => {
+            const kolomKecil = namaKolom.toLowerCase();
+            
+            // Sembunyikan kolom ID, geom, serta kolom yang sudah tampil di Header (NOP & Nama WP)
+            if (
+              kolomKecil === 'id' || 
+              kolomKecil === 'gid' || 
+              kolomKecil === 'objectid' || 
+              kolomKecil === 'geom' ||
+              kolomKecil === 'nop' ||
+              kolomKecil === 'nama_wp_sp' ||
+              kolomKecil === 'nama_wp'
+            ) {
+              return null;
+            }
+
+            return (
+              <div key={namaKolom} className="flex flex-col gap-1">
+                <label className="text-xs font-bold text-slate-500 uppercase">
+                  {namaKolom.replace(/_/g, ' ')}
+                </label>
+                
+                {editMode ? (
+                  <input
+                    type="text"
+                    className="w-full rounded-md border border-slate-300 p-2 text-sm text-slate-800 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    value={formData[namaKolom] || ''}
+                    onChange={(e) => handleInputChange(namaKolom, e.target.value)}
+                  />
+                ) : (
+                  <div className="text-sm font-medium text-slate-800 bg-slate-50 p-2 rounded-md break-words border border-transparent">
+                    {formData[namaKolom] || '-'}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+          
+          {/* FITUR UPLOAD FOTO & DOKUMENTASI (Hanya muncul jika poligon diklik) */}
+          {selectedFeature && (
+            <div className="mt-4 pt-4 border-t border-slate-200">
+              <p className="text-sm font-bold text-slate-800 mb-2">Dokumentasi Lapangan</p>
+              
+              {editMode ? (
+                /* === TAMPILAN 1: MODE EDIT AKTIF (BISA UPLOAD/KAMERA) === */
+                <>
+                  {photoPreview ? (
+                    <div className="mb-3 relative rounded-lg overflow-hidden border border-slate-200 shadow-sm">
+                      <img src={photoPreview} alt="Preview" className="w-full h-auto object-cover max-h-64" />
+                      <button
+                        type="button"
+                        onClick={() => { setPhotoPreview(null); setPhotoFile(null); }}
+                        className="absolute top-2 right-2 bg-red-500 hover:bg-red-600 text-white rounded-full p-2 w-8 h-8 flex items-center justify-center text-xs font-bold shadow-md transition-colors"
+                      >
+                        X
+                      </button>
+                    </div>
+                  ) : (
+                    <div 
+                      onClick={() => cameraInputRef.current?.click()}
+                      className="w-full bg-[#E3F2FD] border-2 border-dashed border-[#64B5F6] rounded-lg p-8 flex flex-col items-center justify-center cursor-pointer hover:bg-blue-100 transition-colors mb-3"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#1E88E5" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mb-2">
+                        <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+                        <circle cx="12" cy="13" r="4"/>
+                      </svg>
+                      <span className="text-slate-800 font-medium text-sm">Buka Kamera Ponsel</span>
+                    </div>
+                  )}
+
+                  {/* Input Tersembunyi */}
+                  <input type="file" accept="image/*" ref={galleryInputRef} onChange={handlePhotoChange} className="hidden" />
+                  <input type="file" accept="image/*" capture="environment" ref={cameraInputRef} onChange={handlePhotoChange} className="hidden" />
+
+                  {/* Tombol Simpan & Upload */}
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => alert("Fitur simpan foto ke storage akan segera diaktifkan!")} 
+                      className="flex-1 bg-[#00C853] hover:bg-green-600 text-white py-2.5 px-4 text-sm font-semibold rounded-md shadow-sm transition-colors"
+                    >
+                      Simpan Foto
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => galleryInputRef.current?.click()}
+                      className="flex-1 bg-[#FFC107] hover:bg-yellow-500 text-white py-2.5 px-4 text-sm font-semibold rounded-md shadow-sm transition-colors"
+                    >
+                      Upload Dari Galeri
+                    </button>
+                  </div>
+                </>
+              ) : (
+                /* === TAMPILAN 2: MODE EDIT MATI (HANYA BACA/LIHAT) === */
+                <div className="w-full">
+                  {photoPreview ? ( 
+                    // Nanti `photoPreview` ini bisa diganti dengan URL foto dari database Supabase jika fotonya sudah tersimpan
+                    <div className="rounded-lg overflow-hidden border border-slate-200 shadow-sm">
+                      <img src={photoPreview} alt="Dokumentasi" className="w-full h-auto object-cover max-h-64" />
+                    </div>
+                  ) : (
+                    <div className="w-full bg-slate-50 border border-slate-200 rounded-lg p-6 flex flex-col items-center justify-center text-slate-400">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mb-2 opacity-50">
+                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                        <circle cx="8.5" cy="8.5" r="1.5"/>
+                        <polyline points="21 15 16 10 5 21"/>
+                      </svg>
+                      <span className="text-xs font-medium">Belum ada dokumentasi</span>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+      </div>
+    </div>
+  </main>
   )
 }
