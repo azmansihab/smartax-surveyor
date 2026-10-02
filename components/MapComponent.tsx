@@ -50,6 +50,9 @@ interface MapComponentProps {
   basemap: BasemapConfig
   activeTableIds: string[]
   onFeatureSelect: (properties: SurveyProperties) => void
+  wmsUrl?: string;
+  wmsLayers?: string;
+  customXyzUrl?: string;
 }
 
 // Pemetaan id tab UI -> nama tabel PostGIS di Supabase
@@ -94,6 +97,9 @@ export default function MapComponent({
   basemap,
   activeTableIds,
   onFeatureSelect,
+  wmsUrl,
+  wmsLayers, 
+  customXyzUrl
 }: MapComponentProps) {
   const [layers, setLayers] = useState<Record<string, FeatureCollection>>({})
   const geoJsonRefs = useRef<Record<string, L.GeoJSON>>({})
@@ -141,8 +147,11 @@ export default function MapComponent({
   }, [activeTableIds])
 
   const handleFeatureClick = (feature: Feature<Geometry, SurveyProperties>) => {
-    onFeatureSelect(feature.properties)
-  }
+  onFeatureSelect({
+    ...feature.properties,
+    geom: feature.geometry
+  })
+}
 
   return (
     <MapContainer
@@ -155,6 +164,27 @@ export default function MapComponent({
       {basemap.type === 'osm' && (
         <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}" />
       )}
+
+      {customXyzUrl && customXyzUrl.trim() !== '' && (
+          <TileLayer
+            key={customXyzUrl}
+            url={customXyzUrl}
+            maxZoom={22}
+            zIndex={5}
+          />
+        )}
+
+        {/* Layer WMS Kustom */}
+        {wmsUrl && wmsUrl.trim() !== '' && wmsLayers && wmsLayers.trim() !== '' && (
+          <WMSTileLayer
+            key={`${wmsUrl}-${wmsLayers}`}
+            url={wmsUrl}
+            layers={wmsLayers}
+            format="image/png"
+            transparent={true}
+            zIndex={10} 
+          />
+        )}
 
       {activeTableIds.map((id) => {
   const layerData = layers[id];

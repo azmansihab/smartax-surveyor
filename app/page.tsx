@@ -41,6 +41,7 @@ export default function SmartaxSurveyorPage() {
   const [isDark, setIsDark] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
   const [panelTab, setPanelTab] = useState<'layers' | 'basemap'>('layers');
+  const [uploading, setUploading] = useState(false);
 
   // 1. Buat state baru untuk menyimpan tab tabel yang dinamis
   const [tableTabs, setTableTabs] = useState<TableTab[]>([]);
@@ -127,6 +128,98 @@ useEffect(() => {
 
     } catch (error: any) {
       alert('Gagal menyimpan data: ' + error.message);
+    }
+  };
+
+// Helper untuk membersihkan dimensi Z/M agar tidak error PostGIS
+  const stripZDimension = (geom: any) => {
+    if (!geom || !geom.coordinates) return geom;
+    const cleanCoords = (arr: any[]): any[] => {
+      if (typeof arr[0] === 'number') return [arr[0], arr[1]];
+      return arr.map(cleanCoords);
+    };
+    return { ...geom, coordinates: cleanCoords(geom.coordinates) };
+  };
+
+  // 5. Fungsi Salin Geometri & Otomatis Memetakan Seluruh Atribut
+  const handleCopyGeometry = async () => {
+    if (!selectedFeature) {
+      alert("Tidak ada poligon yang dipilih!");
+      return;
+    }
+
+    try {
+      const namaTabelAktif = activeTables[0];
+      let originalGeom = selectedFeature.geom || (selectedFeature as any).geometry;
+
+      if (!originalGeom) {
+        const pkColumn = (selectedFeature as any).id ? 'id' : (selectedFeature as any).gid ? 'gid' : 'objectid';
+        const idPoligon = (selectedFeature as any)[pkColumn];
+
+        if (idPoligon) {
+          const { data } = await supabase
+            .from(namaTabelAktif)
+            .select('geom')
+            .eq(pkColumn, idPoligon)
+            .single();
+
+          if (data && data.geom) originalGeom = data.geom;
+        }
+      }
+
+      if (!originalGeom) {
+        alert("Geometri poligon tidak ditemukan di database!");
+        return;
+      }
+
+      const cleanedGeom = stripZDimension(originalGeom);
+
+      // Normalisasi semua key properti ke huruf kecil
+      const lowerProps: Record<string, any> = {};
+      Object.keys(selectedFeature).forEach((key) => {
+        lowerProps[key.toLowerCase()] = (selectedFeature as any)[key];
+      });
+
+      // Salin semua kolom yang cocok & petakan nama kolom yang berbeda
+      const newBangunanData: Record<string, any> = {
+        geom: cleanedGeom,
+        
+        // MAPPING KHUSUS NOP & WP
+        nop_pengukuran: lowerProps.nop || lowerProps.nop_pengukuran || '',
+        wp_pengukuran: lowerProps.nama_wp || lowerProps.wp_pengukuran || lowerProps.wp || '',
+        
+        // MAPPING OTOMATIS ATRIBUT LAIN (LUAS, HASIL LAPANGAN, JPB, DLL)
+        luas_bangunan_oppajak: lowerProps.luas_bangunan_oppajak || null,
+        hasil_lapangan: lowerProps.hasil_lapangan || null,
+        klasifikasi_jpb: lowerProps.klasifikasi_jpb || lowerProps.jpb || null,
+        sumber: lowerProps.sumber || lowerProps.sumber_data_2 || lowerProps.sumber_data || null,
+      };
+
+      // Salin sisa properti lainnya secara otomatis jika nama kolom di DB persis sama
+      Object.keys(lowerProps).forEach((key) => {
+        if (!['geom', 'geometry', 'id', 'gid', 'objectid', 'nop', 'nama_wp'].includes(key)) {
+          if (newBangunanData[key] === undefined) {
+            newBangunanData[key] = lowerProps[key];
+          }
+        }
+      });
+
+      const { data, error } = await supabase
+        .from('bangunan_raw')
+        .insert([newBangunanData])
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      alert("Berhasil! Poligon dan seluruh atribut tersalin ke bangunan_raw.");
+      
+      setSelectedFeature(data as unknown as SurveyProperties);
+      setFormData(data);
+      setEditMode(true); 
+
+    } catch (error: any) {
+      alert("Gagal menyalin geometri: " + error.message);
     }
   };
 
@@ -531,11 +624,41 @@ useEffect(() => {
           {selectedFeature && (
             <div className="mb-2 pb-4 border-b border-slate-200">
               {/* Pastikan nama properti NOP dan NAMA_WP sesuai dengan huruf besar/kecil di database Anda */}
+              
+              {/* TOMBOL AKSI: COPY GEOMETRY & SIMPAN (Hanya muncul jika poligon diklik) */}
+          {selectedFeature && (
+            <div className="mb-4 flex flex-col gap-2">
+              
+              {/* Tombol Simpan Form (Hanya muncul di Mode Edit) */}
+              {editMode && (
+                <button
+                  type="button"
+                  onClick={handleSimpanData}
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg shadow-sm transition-colors"
+                >
+                  Simpan Perubahan
+                </button>
+              )}
+
+              {/* Tombol Copy Geometri (Hanya muncul jika BUKAN dari layer bangunan_raw) */}
+              {activeTables[0] !== 'bangunan_raw' && (
+                <button
+                  type="button"
+                  onClick={handleCopyGeometry}
+                  className="w-full flex items-center justify-center gap-2 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 font-bold py-2 px-4 rounded-lg shadow-sm transition-colors border border-emerald-300"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                  Salin Poligon & Buat Survei Baru
+                </button>
+              )}
+            </div>
+          )}
+              
               <p className="text-lg font-bold text-slate-900">
-                NOP: {formData['NOP'] || formData['nop'] || '-'}
+                NOP: {String((selectedFeature as any)?.nop_pengukuran || (selectedFeature as any)?.NOP || (selectedFeature as any)?.nop || '-')}
               </p>
               <p className="text-sm font-medium text-slate-600 uppercase">
-                WP: {formData['nama_wp_sp'] || formData['NAMA_WP_SP'] || '-'}
+                WP: {String((selectedFeature as any)?.wp_pengukuran || (selectedFeature as any)?.NAMA_WP || (selectedFeature as any)?.nama_wp || '-')}
               </p>
             </div>
           )}
@@ -544,18 +667,8 @@ useEffect(() => {
           {selectedFeature && Object.keys(formData).map((namaKolom) => {
             const kolomKecil = namaKolom.toLowerCase();
             
-            // Sembunyikan kolom ID, geom, serta kolom yang sudah tampil di Header (NOP & Nama WP)
-            if (
-              kolomKecil === 'id' || 
-              kolomKecil === 'gid' || 
-              kolomKecil === 'objectid' || 
-              kolomKecil === 'geom' ||
-              kolomKecil === 'nop' ||
-              kolomKecil === 'nama_wp_sp' ||
-              kolomKecil === 'nama_wp'
-            ) {
-              return null;
-            }
+            // Sembunyikan kolom sistem & header
+            if (['id', 'gid', 'objectid', 'geom', 'nop', 'nama_wp_sp', 'nama_wp'].includes(kolomKecil)) return null;
 
             return (
               <div key={namaKolom} className="flex flex-col gap-1">
@@ -564,12 +677,50 @@ useEffect(() => {
                 </label>
                 
                 {editMode ? (
-                  <input
-                    type="text"
-                    className="w-full rounded-md border border-slate-300 p-2 text-sm text-slate-800 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                    value={formData[namaKolom] || ''}
-                    onChange={(e) => handleInputChange(namaKolom, e.target.value)}
-                  />
+                  // LOGIKA BARU: Jika ini tabel bangunan_raw, tampilkan Dropdown
+                  activeTables.includes('bangunan_raw') && kolomKecil === 'jenis_bangunan' ? (
+                    <select
+                      className="w-full rounded-md border border-slate-300 p-2 text-sm text-slate-800 bg-white focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      value={formData[namaKolom] || ''}
+                      onChange={(e) => handleInputChange(namaKolom, e.target.value)}
+                    >
+                      <option value="">-- Pilih Jenis Bangunan --</option>
+                      <option value="1">1 - Perumahan</option>
+                      <option value="2">2 - Ruko/Rukan</option>
+                      <option value="3">3 - Pabrik</option>
+                      <option value="8a">8a - Gudang</option>
+                      <option value="9">9 - Gedung Pemerintah</option>
+                      <option value="11a">11a - Rumah Ibadat</option>
+                      {/* Tambahkan kode Bapenda lainnya di sini */}
+                    </select>
+                  ) : activeTables.includes('bangunan_raw') && kolomKecil === 'kondisi_bangunan' ? (
+                    <select
+                      className="w-full rounded-md border border-slate-300 p-2 text-sm text-slate-800 bg-white focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      value={formData[namaKolom] || ''}
+                      onChange={(e) => handleInputChange(namaKolom, e.target.value)}
+                    >
+                      <option value="">-- Pilih Kondisi --</option>
+                      {KONDISI_OPTIONS.map(opt => (
+                        <option key={opt} value={opt}>{opt}</option>
+                      ))}
+                    </select>
+                  ) : activeTables.includes('bangunan_raw') && kolomKecil === 'jumlah_lantai' ? (
+                     <input
+                      type="number"
+                      min="1"
+                      className="w-full rounded-md border border-slate-300 p-2 text-sm text-slate-800 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      value={formData[namaKolom] || ''}
+                      onChange={(e) => handleInputChange(namaKolom, e.target.value)}
+                    />
+                  ) : (
+                    // Default Input Text untuk kolom lainnya
+                    <input
+                      type="text"
+                      className="w-full rounded-md border border-slate-300 p-2 text-sm text-slate-800 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      value={formData[namaKolom] || ''}
+                      onChange={(e) => handleInputChange(namaKolom, e.target.value)}
+                    />
+                  )
                 ) : (
                   <div className="text-sm font-medium text-slate-800 bg-slate-50 p-2 rounded-md break-words border border-transparent">
                     {formData[namaKolom] || '-'}
