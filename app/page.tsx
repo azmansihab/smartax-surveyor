@@ -13,6 +13,7 @@ import {
   Camera,
   ImageUp,
   Trash2,
+  LocateFixed,
 } from 'lucide-react'
 import { useRef, useState, useEffect, type ChangeEvent } from 'react'
 import type { BasemapConfig, SurveyProperties } from '@/components/MapComponent'
@@ -51,6 +52,7 @@ export default function SmartaxSurveyorPage() {
   const [panelTab, setPanelTab] = useState<'layers' | 'basemap'>('layers');
   const [uploading, setUploading] = useState(false);
   const [mapRefreshTrigger, setMapRefreshTrigger] = useState(0);
+  const [locateTrigger, setLocateTrigger] = useState(0);
 
   // 1. Buat state baru untuk menyimpan tab tabel yang dinamis
   const [tableTabs, setTableTabs] = useState<TableTab[]>([]);
@@ -413,6 +415,7 @@ useEffect(() => {
         activeTableIds={activeTables}
         onFeatureSelect={handleFeatureSelect}
         refreshTrigger={mapRefreshTrigger}
+        locateTrigger={locateTrigger}
       />
 
       {/* Kiri atas: branding KSC ala urban/graffiti */}
@@ -427,6 +430,14 @@ useEffect(() => {
       {/* Kanan atas: kontrol peta (glassmorphism) */}
       <div className="absolute right-4 top-4 z-50 flex items-center gap-2">
         <div className="flex items-center gap-1 rounded-2xl border border-white/40 bg-white/70 p-1 shadow-lg backdrop-blur-md">
+          <button
+            type="button"
+            onClick={() => setLocateTrigger(prev => prev + 1)}
+            aria-label="Lokasi Saya"
+            className="flex h-9 w-9 items-center justify-center rounded-xl transition bg-white shadow text-blue-600 hover:bg-blue-50"
+          >
+            <LocateFixed size={18} />
+          </button>
           <button
             type="button"
             onClick={() => setIsDark(false)}

@@ -7,6 +7,7 @@ import {
   WMSTileLayer,
   GeoJSON,
   useMap,
+  CircleMarker,
 } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -50,18 +51,43 @@ interface MapComponentProps {
   basemap: BasemapConfig
   activeTableIds: string[]
   onFeatureSelect: (properties: SurveyProperties) => void
-  wmsUrl?: string;
-  wmsLayers?: string;
-  customXyzUrl?: string;
-  refreshTrigger?: number;
+  wmsUrl?: string
+  wmsLayers?: string
+  customXyzUrl?: string
+  refreshTrigger?: number
+  locateTrigger?: number
 }
 
-// Pemetaan id tab UI -> nama tabel PostGIS di Supabase
+// Komponen untuk membaca GPS dan menampilkan titik biru
+function LocationMarker({ trigger }: { trigger: number }) {
+  const [position, setPosition] = useState<any>(null)
+  const map = useMap()
+
+  useEffect(() => {
+    if (trigger > 0) {
+      map.locate().on("locationfound", function (e) {
+        setPosition(e.latlng)
+        map.flyTo(e.latlng, 19, { animate: true, duration: 1.5 })
+      }).on("locationerror", function (e) {
+        alert("Gagal mendeteksi lokasi. Pastikan GPS aktif dan browser diizinkan mengakses lokasi.")
+      })
+    }
+  }, [trigger, map])
+
+  return position === null ? null : (
+    <CircleMarker 
+      center={position} 
+      radius={8} 
+      pathOptions={{ color: 'white', fillColor: '#2563eb', fillOpacity: 1, weight: 3 }}
+    />
+  )
+}
+
+// Pemetaan kontrol Geoman
 function GeomanControls({ editMode }: { editMode: boolean }) {
   const map = useMap()
 
   useEffect(() => {
-    // leaflet-geoman menambahkan .pm ke instance map saat runtime
     const pm = map.pm
     if (!pm) return
 
@@ -100,21 +126,20 @@ export default function MapComponent({
   onFeatureSelect,
   wmsUrl,
   wmsLayers, 
-  customXyzUrl
+  customXyzUrl,
+  refreshTrigger,
+  locateTrigger
 }: MapComponentProps) {
   const [layers, setLayers] = useState<Record<string, FeatureCollection>>({})
   const geoJsonRefs = useRef<Record<string, L.GeoJSON>>({})
 
-  // Ambil GeoJSON per tabel aktif lewat RPC Supabase (ST_AsGeoJSON di sisi DB).
-  // Buat fungsi Postgres `get_polygon_geojson(table_name text)` yang mengembalikan
-  // sebuah FeatureCollection agar endpoint ini bisa langsung dipakai.
   useEffect(() => {
     let cancelled = false
 
     async function loadTables() {
       const entries = await Promise.all(
         activeTableIds.map(async (id) => {
-          const tableName = id;
+          const tableName = id
           if (!tableName) return [id, null] as const
 
           const { data, error } = await supabase.rpc('get_polygon_geojson', {
@@ -145,19 +170,19 @@ export default function MapComponent({
     return () => {
       cancelled = true
     }
-  }, [activeTableIds])
+  }, [activeTableIds, refreshTrigger])
 
   const handleFeatureClick = (feature: Feature<Geometry, SurveyProperties>) => {
-  onFeatureSelect({
-    ...feature.properties,
-    geom: feature.geometry
-  })
-}
+    onFeatureSelect({
+      ...feature.properties,
+      geom: feature.geometry
+    })
+  }
 
   return (
     <MapContainer
-      center={[-6.3, 106.85]}
-      zoom={10}
+      center={[-6.1751, 106.8650]}
+      zoom={13}
       zoomControl={false}
       attributionControl={false}
       className="absolute inset-0 z-0 h-full w-full"
@@ -166,61 +191,60 @@ export default function MapComponent({
         <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}" />
       )}
 
-      {customXyzUrl && customXyzUrl.trim() !== '' && (
-          <TileLayer
-            key={customXyzUrl}
-            url={customXyzUrl}
-            maxZoom={22}
-            zIndex={5}
-          />
-        )}
+      {basemap.type === 'dark' && (
+        <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" />
+      )}
 
-        {/* Layer WMS Kustom */}
-        {wmsUrl && wmsUrl.trim() !== '' && wmsLayers && wmsLayers.trim() !== '' && (
-          <WMSTileLayer
-            key={`${wmsUrl}-${wmsLayers}`}
-            url={wmsUrl}
-            layers={wmsLayers}
-            format="image/png"
-            transparent={true}
-            zIndex={10} 
-          />
-        )}
+      {customXyzUrl && customXyzUrl.trim() !== '' && (
+        <TileLayer
+          key={customXyzUrl}
+          url={customXyzUrl}
+          maxZoom={22}
+          zIndex={5}
+        />
+      )}
+
+      {wmsUrl && wmsUrl.trim() !== '' && wmsLayers && wmsLayers.trim() !== '' && (
+        <WMSTileLayer
+          key={`${wmsUrl}-${wmsLayers}`}
+          url={wmsUrl}
+          layers={wmsLayers}
+          format="image/png"
+          transparent={true}
+          zIndex={10} 
+        />
+      )}
 
       {activeTableIds.map((id) => {
-  const layerData = layers[id];
-  if (!layerData) return null;
+        const layerData = layers[id]
+        if (!layerData) return null
 
-  // Trik kunci: Menambahkan panjang string JSON ke dalam key 
-  // memaksa React Leaflet merender ulang jika data/statusnya berubah
-  const uniqueKey = `${id}-${JSON.stringify(layerData).length}`;
+        const uniqueKey = `${id}-${JSON.stringify(layerData).length}`
 
-  return (
-    <GeoJSON
-      key={uniqueKey}
-      data={layerData}
-      ref={(instance: L.GeoJSON | null) => {
-        if (instance) geoJsonRefs.current[id] = instance;
-      }}
-      style={() => ({
-        color: isDark ? '#34d399' : '#059669',
-        weight: 2,
-        fillColor: isDark ? '#34d399' : '#10b981',
-        fillOpacity: 0.4,
+        return (
+          <GeoJSON
+            key={uniqueKey}
+            data={layerData}
+            ref={(instance: L.GeoJSON | null) => {
+              if (instance) geoJsonRefs.current[id] = instance
+            }}
+            style={() => ({
+              color: isDark ? '#34d399' : '#059669',
+              weight: 2,
+              fillColor: isDark ? '#34d399' : '#10b981',
+              fillOpacity: 0.4,
+            })}
+            onEachFeature={(feature, layer) => {
+              layer.on('click', () => {
+                handleFeatureClick(feature as any)
+              })
+            }}
+          />
+        )
       })}
-      onEachFeature={(feature, layer) => {
-        // Mengirimkan data atribut poligon ke formulir saat diklik
-        layer.on('click', () => {
-          handleFeatureClick(feature as any);
-        });
-      }}
-    />
-  );
-})}
 
-      {/* Peta dasar tetap read-only; hanya geometri di layer GeoJSON di atas
-          yang bisa diedit, dan hanya ketika Mode Edit Spasial aktif. */}
       <GeomanControls editMode={editMode} />
+      <LocationMarker trigger={locateTrigger || 0} />
     </MapContainer>
   )
 }
