@@ -12,6 +12,7 @@ import {
   Pencil,
   Camera,
   ImageUp,
+  Trash2,
 } from 'lucide-react'
 import { useRef, useState, useEffect, type ChangeEvent } from 'react'
 import type { BasemapConfig, SurveyProperties } from '@/components/MapComponent'
@@ -36,12 +37,20 @@ interface TableTab {
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
+const OPT_JENIS_INPUT = ['A. PEREKAMAN DATA', 'B. PEMUTAKHIRAN DATA', 'C. PENGHAPUSAN DATA', 'D. PENGARSIPAN DATA', 'E. PENILAIAN INDIVIDUAL']; //[cite: 27]
+const OPT_PENGGUNAAN = ['1a. Rumah Tinggal', '1b. Rumah Dikontrakkan', '1c. Rumah Kos / Guesthouse', '1d. Rumah Tinggal yang juga digunakan sebagai Tempat Usaha', '2a. Perkantoran Swasta', '2b. Perkantoran BUMN / BUMD', '2c. Universitas Negeri', '2d. Universitas Swasta / Sejenis', '2e. Mixed Use', '3. Pabrik', '4a. Toko / Kios / Apotek / Bengkel Motor', '4b. Ruko / Rukan', '4c. Restoran / Kafe', '4d. Ruko / Rukan yang digunakan sepenuhnya menjadi tempat tinggal', '5a. Rumah Sakit Pemerintah', '5b. Rumah Sakit Swasta', '5c. Klinik / Sejenis', '5d. Laboratorium Klinik', '6. Gymnasium', '7a. Hotel', '7b. Wisma', '7c. Asrama / Mess', '7d. Motel / Losmen / Hostel / Sejenis', '8a. Bengkel / Showroom Mobil', '8b. Gudang', '8c. Bangunan Pertanian / Peternakan', '8d. Workshop', '9. Gedung Pemerintah', '10. Lain-lain']; //[cite: 28]
+const OPT_KONDISI = ['A. Sangat Baik', 'B. Baik', 'C. Sedang', 'D. Jelek']; //[cite: 29]
+const OPT_KONSTRUKSI = ['A. Baja', 'B. Beton', 'C. Batu Bata', 'D. Kayu']; //[cite: 30]
+const OPT_ATAP = ['A. Decrabon / Beton / Genteng / Genteng Glazur / Bitumen', 'B. Genteng Beton / Aluminium / PVC', 'C. Genteng Biasa / Sirap / Polycarbonat / GRC', 'D. Asbes', 'E. Seng']; //[cite: 31]
+const OPT_LANTAI = ['A. Marmer / Granit / PVC / Homogeneous Tile / Vinyl', 'B. Keramik Standar / Epoxy', 'C. Teraso', 'D. Ubin PC / Papan', 'E. Semen']; //[cite: 33]
+const OPT_LANGIT = ['A. Akustik / Jati / PVC / GRC / Gypsum', 'B. Triplek / Asbes / Bambu', 'C. Tidak Ada']; //[cite: 34]
 
 export default function SmartaxSurveyorPage() {
   const [isDark, setIsDark] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
   const [panelTab, setPanelTab] = useState<'layers' | 'basemap'>('layers');
   const [uploading, setUploading] = useState(false);
+  const [mapRefreshTrigger, setMapRefreshTrigger] = useState(0);
 
   // 1. Buat state baru untuk menyimpan tab tabel yang dinamis
   const [tableTabs, setTableTabs] = useState<TableTab[]>([]);
@@ -141,7 +150,7 @@ useEffect(() => {
     return { ...geom, coordinates: cleanCoords(geom.coordinates) };
   };
 
-  // 5. Fungsi Salin Geometri & Otomatis Memetakan Seluruh Atribut
+  // 5. Fungsi Salin Geometri & Pemetaan Atribut Terkontrol
   const handleCopyGeometry = async () => {
     if (!selectedFeature) {
       alert("Tidak ada poligon yang dipilih!");
@@ -174,35 +183,36 @@ useEffect(() => {
 
       const cleanedGeom = stripZDimension(originalGeom);
 
-      // Normalisasi semua key properti ke huruf kecil
       const lowerProps: Record<string, any> = {};
       Object.keys(selectedFeature).forEach((key) => {
         lowerProps[key.toLowerCase()] = (selectedFeature as any)[key];
       });
 
-      // Salin semua kolom yang cocok & petakan nama kolom yang berbeda
+      // HANYA MASUKKAN KOLOM YANG SUDAH PASTI ADA DI TABEL BANGUNAN_RAW
       const newBangunanData: Record<string, any> = {
         geom: cleanedGeom,
         
-        // MAPPING KHUSUS NOP & WP
+        // 1. Mapping Atribut Utama
         nop_pengukuran: lowerProps.nop || lowerProps.nop_pengukuran || '',
         wp_pengukuran: lowerProps.nama_wp || lowerProps.wp_pengukuran || lowerProps.wp || '',
         
-        // MAPPING OTOMATIS ATRIBUT LAIN (LUAS, HASIL LAPANGAN, JPB, DLL)
+        // 2. Mapping Kolom Irisan (Berdasarkan list atribut yang sama)
+        kelurahan: lowerProps.kelurahan || null,
+        kecamatan: lowerProps.kecamatan || null,
+        wilayah: lowerProps.wilayah || null,
+        jenis_input_data: lowerProps.jenis_input_data || null,
+        jumlah_bangunan: lowerProps.jumlah_bangunan || null,
+        
         luas_bangunan_oppajak: lowerProps.luas_bangunan_oppajak || null,
         hasil_lapangan: lowerProps.hasil_lapangan || null,
-        klasifikasi_jpb: lowerProps.klasifikasi_jpb || lowerProps.jpb || null,
-        sumber: lowerProps.sumber || lowerProps.sumber_data_2 || lowerProps.sumber_data || null,
+        tanggal_ukur: lowerProps.tanggal_ukur || null,
+        nama_sts: lowerProps.nama_sts || null,
+        
+        // Klasifikasi JPB (Di bangunan_raw namanya KLASIFIKASI_JPB)
+        klasifikasi_jpb: lowerProps.klasifikasi_jpb || lowerProps.jpb_v1_petakerja || null
       };
 
-      // Salin sisa properti lainnya secara otomatis jika nama kolom di DB persis sama
-      Object.keys(lowerProps).forEach((key) => {
-        if (!['geom', 'geometry', 'id', 'gid', 'objectid', 'nop', 'nama_wp'].includes(key)) {
-          if (newBangunanData[key] === undefined) {
-            newBangunanData[key] = lowerProps[key];
-          }
-        }
-      });
+      // KODE "AUTO COPY SEMUA ATRIBUT" YANG BIKIN ERROR DIHAPUS DI SINI
 
       const { data, error } = await supabase
         .from('bangunan_raw')
@@ -212,7 +222,7 @@ useEffect(() => {
 
       if (error) throw error;
 
-      alert("Berhasil! Poligon dan seluruh atribut tersalin ke bangunan_raw.");
+      alert("Berhasil! Poligon dan atribut tersalin ke bangunan_raw.");
       
       setSelectedFeature(data as unknown as SurveyProperties);
       setFormData(data);
@@ -220,6 +230,92 @@ useEffect(() => {
 
     } catch (error: any) {
       alert("Gagal menyalin geometri: " + error.message);
+    }
+  };
+
+  // Fungsi untuk Menghapus Poligon
+      const handleDeleteFeature = async () => {
+      if (!selectedFeature) return;
+    
+      // Munculkan dialog konfirmasi sebelum menghapus
+      const confirmDelete = window.confirm("⚠️ Yakin ingin menghapus poligon ini secara permanen? Tindakan ini tidak dapat dibatalkan.");
+      if (!confirmDelete) return;
+
+      try {
+      const namaTabelAktif = activeTables[0];
+      const pkColumn = (selectedFeature as any).id ? 'id' : (selectedFeature as any).gid ? 'gid' : 'objectid';
+      const idPoligon = (selectedFeature as any)[pkColumn];
+
+      if (!idPoligon) {
+        alert("Gagal: ID poligon tidak ditemukan!");
+        return;
+      }
+
+      const { error } = await supabase
+        .from(namaTabelAktif)
+        .delete()
+        .eq(pkColumn, idPoligon);
+
+      if (error) throw error;
+
+      alert("Poligon berhasil dihapus!");
+      setSheetOpen(false);      // Tutup panel form bawah
+      setSelectedFeature(null); // Bersihkan pilihan
+      
+      setMapRefreshTrigger(prev => prev + 1);
+      
+      } catch (error: any) {
+        alert("Gagal menghapus poligon: " + error.message);
+      }
+      };
+
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    try {
+      const file = e.target.files?.[0];
+      if (!file || !selectedFeature) {
+        alert("Pilih poligon/data survei terlebih dahulu!");
+        return;
+      }
+
+      setUploading(true);
+
+      // Buat nama file unik
+      const fileExt = file.name.split('.').pop();
+      const fileName = `dokumentasi_${selectedFeature.id || Date.now()}_${Math.random()}.${fileExt}`;
+      const filePath = `survey_photos/${fileName}`;
+
+      // Upload ke Supabase Storage (Bucket: survey_images)
+      const { error: uploadError } = await supabase.storage
+        .from('survey_images')
+        .upload(filePath, file);
+
+      if (uploadError) throw uploadError;
+
+      // Ambil Public URL
+      const { data: urlData } = supabase.storage
+        .from('survey_images')
+        .getPublicUrl(filePath);
+
+      const publicUrl = urlData.publicUrl;
+
+      // Update kolom foto_pengukuran di database bangunan_raw
+      const { error: updateError } = await supabase
+        .from('bangunan_raw')
+        .update({ foto_pengukuran: publicUrl })
+        .eq('id', selectedFeature.id);
+
+      if (updateError) throw updateError;
+
+      // Update tampilan di layar secara langsung
+      setFormData((prev: any) => ({ ...prev, foto_pengukuran: publicUrl }));
+      setSelectedFeature((prev: any) => ({ ...prev, foto_pengukuran: publicUrl }));
+
+      alert("Foto dokumentasi berhasil diunggah!");
+    } catch (error: any) {
+      alert("Gagal mengunggah foto: " + error.message);
+    } finally {
+      setUploading(false);
     }
   };
 
@@ -316,6 +412,7 @@ useEffect(() => {
         basemap={basemap}
         activeTableIds={activeTables}
         onFeatureSelect={handleFeatureSelect}
+        refreshTrigger={mapRefreshTrigger}
       />
 
       {/* Kiri atas: branding KSC ala urban/graffiti */}
@@ -546,16 +643,30 @@ useEffect(() => {
               })}
             </div>
             <div className="flex items-center gap-2 pl-3">
+              {/* TOMBOL PENSIL (EDIT) */}
               <button
                 type="button"
                 aria-label="Edit"
-                onClick={() => setEditMode((v) => !v)} // Tambahkan event onClick ini
+                onClick={() => setEditMode((v) => !v)}
                 className={`flex h-8 w-8 items-center justify-center rounded-full transition-colors ${
                   editMode ? 'bg-blue-600 text-white shadow-md' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
                 }`}
               >
                 <Pencil size={14} />
               </button>
+              
+              {/* TOMBOL HAPUS */}
+              <button
+                type="button"
+                aria-label="Hapus Poligon"
+                onClick={handleDeleteFeature}
+                className="flex h-8 w-8 items-center justify-center rounded-full bg-red-100 text-red-600 hover:bg-red-200 transition-colors"
+                title="Hapus Poligon"
+              >
+                <Trash2 size={14} />
+              </button>
+
+              {/* TOMBOL TUTUP (CHEVRON) */}
               <button
                 type="button"
                 aria-label="Tutup"
@@ -667,8 +778,8 @@ useEffect(() => {
           {selectedFeature && Object.keys(formData).map((namaKolom) => {
             const kolomKecil = namaKolom.toLowerCase();
             
-            // Sembunyikan kolom sistem & header
-            if (['id', 'gid', 'objectid', 'geom', 'nop', 'nama_wp_sp', 'nama_wp'].includes(kolomKecil)) return null;
+            // Sembunyikan kolom sistem & header (Tambahkan kolom lain jika ingin disembunyikan)
+            if (['id', 'gid', 'objectid', 'geom', 'nop', 'nama_wp_sp', 'nama_wp', 'nop_pengukuran', 'wp_pengukuran'].includes(kolomKecil)) return null;
 
             return (
               <div key={namaKolom} className="flex flex-col gap-1">
@@ -677,46 +788,54 @@ useEffect(() => {
                 </label>
                 
                 {editMode ? (
-                  // LOGIKA BARU: Jika ini tabel bangunan_raw, tampilkan Dropdown
-                  activeTables.includes('bangunan_raw') && kolomKecil === 'jenis_bangunan' ? (
-                    <select
-                      className="w-full rounded-md border border-slate-300 p-2 text-sm text-slate-800 bg-white focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                      value={formData[namaKolom] || ''}
-                      onChange={(e) => handleInputChange(namaKolom, e.target.value)}
-                    >
-                      <option value="">-- Pilih Jenis Bangunan --</option>
-                      <option value="1">1 - Perumahan</option>
-                      <option value="2">2 - Ruko/Rukan</option>
-                      <option value="3">3 - Pabrik</option>
-                      <option value="8a">8a - Gudang</option>
-                      <option value="9">9 - Gedung Pemerintah</option>
-                      <option value="11a">11a - Rumah Ibadat</option>
-                      {/* Tambahkan kode Bapenda lainnya di sini */}
+                  // LOGIKA MAPPING DROPDOWN KHUSUS BANGUNAN RAW
+                  activeTables.includes('bangunan_raw') && kolomKecil === 'jenis_input_data' ? (
+                    <select className="w-full rounded-md border border-slate-300 p-2 text-sm text-slate-800 bg-white focus:border-blue-500 focus:outline-none" value={formData[namaKolom] || ''} onChange={(e) => handleInputChange(namaKolom, e.target.value)}>
+                      <option value="">-- Pilih Jenis Input --</option>
+                      {OPT_JENIS_INPUT.map(o => <option key={o} value={o}>{o}</option>)}
                     </select>
-                  ) : activeTables.includes('bangunan_raw') && kolomKecil === 'kondisi_bangunan' ? (
-                    <select
-                      className="w-full rounded-md border border-slate-300 p-2 text-sm text-slate-800 bg-white focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                      value={formData[namaKolom] || ''}
-                      onChange={(e) => handleInputChange(namaKolom, e.target.value)}
-                    >
+                  ) : activeTables.includes('bangunan_raw') && kolomKecil === 'jenis_penggunaan_bangunan' ? (
+                    <select className="w-full rounded-md border border-slate-300 p-2 text-sm text-slate-800 bg-white focus:border-blue-500 focus:outline-none" value={formData[namaKolom] || ''} onChange={(e) => handleInputChange(namaKolom, e.target.value)}>
+                      <option value="">-- Pilih Penggunaan --</option>
+                      {OPT_PENGGUNAAN.map(o => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                  ) : activeTables.includes('bangunan_raw') && (kolomKecil === 'kondisi_pada_umumnya' || kolomKecil === 'kondisi_bangunan') ? (
+                    <select className="w-full rounded-md border border-slate-300 p-2 text-sm text-slate-800 bg-white focus:border-blue-500 focus:outline-none" value={formData[namaKolom] || ''} onChange={(e) => handleInputChange(namaKolom, e.target.value)}>
                       <option value="">-- Pilih Kondisi --</option>
-                      {KONDISI_OPTIONS.map(opt => (
-                        <option key={opt} value={opt}>{opt}</option>
-                      ))}
+                      {OPT_KONDISI.map(o => <option key={o} value={o}>{o}</option>)}
                     </select>
-                  ) : activeTables.includes('bangunan_raw') && kolomKecil === 'jumlah_lantai' ? (
-                     <input
+                  ) : activeTables.includes('bangunan_raw') && kolomKecil === 'konstruksi' ? (
+                    <select className="w-full rounded-md border border-slate-300 p-2 text-sm text-slate-800 bg-white focus:border-blue-500 focus:outline-none" value={formData[namaKolom] || ''} onChange={(e) => handleInputChange(namaKolom, e.target.value)}>
+                      <option value="">-- Pilih Konstruksi --</option>
+                      {OPT_KONSTRUKSI.map(o => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                  ) : activeTables.includes('bangunan_raw') && kolomKecil === 'atap' ? (
+                    <select className="w-full rounded-md border border-slate-300 p-2 text-sm text-slate-800 bg-white focus:border-blue-500 focus:outline-none" value={formData[namaKolom] || ''} onChange={(e) => handleInputChange(namaKolom, e.target.value)}>
+                      <option value="">-- Pilih Atap --</option>
+                      {OPT_ATAP.map(o => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                  ) : activeTables.includes('bangunan_raw') && kolomKecil === 'lantai' ? (
+                    <select className="w-full rounded-md border border-slate-300 p-2 text-sm text-slate-800 bg-white focus:border-blue-500 focus:outline-none" value={formData[namaKolom] || ''} onChange={(e) => handleInputChange(namaKolom, e.target.value)}>
+                      <option value="">-- Pilih Lantai --</option>
+                      {OPT_LANTAI.map(o => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                  ) : activeTables.includes('bangunan_raw') && kolomKecil === 'langit_langit' ? (
+                    <select className="w-full rounded-md border border-slate-300 p-2 text-sm text-slate-800 bg-white focus:border-blue-500 focus:outline-none" value={formData[namaKolom] || ''} onChange={(e) => handleInputChange(namaKolom, e.target.value)}>
+                      <option value="">-- Pilih Langit-Langit --</option>
+                      {OPT_LANGIT.map(o => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                  ) : activeTables.includes('bangunan_raw') && ['jumlah_lantai', 'jumlah_bangunan', 'tahun_dibangun', 'tahun_direnovasi', 'daya_listrik_terpasang_watt'].includes(kolomKecil) ? (
+                    <input
                       type="number"
-                      min="1"
-                      className="w-full rounded-md border border-slate-300 p-2 text-sm text-slate-800 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      className="w-full rounded-md border border-slate-300 p-2 text-sm text-slate-800 focus:border-blue-500 focus:outline-none"
                       value={formData[namaKolom] || ''}
                       onChange={(e) => handleInputChange(namaKolom, e.target.value)}
                     />
                   ) : (
-                    // Default Input Text untuk kolom lainnya
+                    // Default Input Text untuk kolom lain (teks biasa)
                     <input
                       type="text"
-                      className="w-full rounded-md border border-slate-300 p-2 text-sm text-slate-800 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      className="w-full rounded-md border border-slate-300 p-2 text-sm text-slate-800 focus:border-blue-500 focus:outline-none"
                       value={formData[namaKolom] || ''}
                       onChange={(e) => handleInputChange(namaKolom, e.target.value)}
                     />

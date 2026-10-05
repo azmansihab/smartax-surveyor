@@ -53,6 +53,7 @@ interface MapComponentProps {
   wmsUrl?: string;
   wmsLayers?: string;
   customXyzUrl?: string;
+  refreshTrigger?: number;
 }
 
 // Pemetaan id tab UI -> nama tabel PostGIS di Supabase
