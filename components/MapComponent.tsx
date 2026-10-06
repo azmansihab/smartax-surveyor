@@ -51,6 +51,7 @@ interface MapComponentProps {
   basemap: BasemapConfig
   activeTableIds: string[]
   onFeatureSelect: (properties: SurveyProperties) => void
+  onFeatureCreate?: (geometry: any) => void
   wmsUrl?: string
   wmsLayers?: string
   customXyzUrl?: string
@@ -118,12 +119,42 @@ function GeomanControls({ editMode }: { editMode: boolean }) {
   return null
 }
 
+// Tempelkan kode ini di dalam file components/MapComponent.tsx
+function DrawListener({ onFeatureCreate }: { onFeatureCreate?: (geometry: any) => void }) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!map) return;
+
+    const handleCreate = (e: any) => {
+      const layer = e.layer;
+      const geoJsonGeometry = layer.toGeoJSON().geometry;
+      
+      // Hapus layer sementara dari peta karena nanti akan dirender ulang dari database
+      map.removeLayer(layer);
+
+      if (onFeatureCreate) {
+        onFeatureCreate(geoJsonGeometry);
+      }
+    };
+
+    map.on('pm:create', handleCreate);
+
+    return () => {
+      map.off('pm:create', handleCreate);
+    };
+  }, [map, onFeatureCreate]);
+
+  return null;
+}
+
 export default function MapComponent({
   isDark,
   editMode,
   basemap,
   activeTableIds,
   onFeatureSelect,
+  onFeatureCreate,
   wmsUrl,
   wmsLayers, 
   customXyzUrl,
@@ -245,6 +276,7 @@ export default function MapComponent({
 
       <GeomanControls editMode={editMode} />
       <LocationMarker trigger={locateTrigger || 0} />
+      <DrawListener onFeatureCreate={onFeatureCreate} />
     </MapContainer>
   )
 }

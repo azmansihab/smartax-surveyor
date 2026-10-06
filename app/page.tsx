@@ -384,6 +384,44 @@ useEffect(() => {
     }
   };
 
+  // Fungsi untuk menyimpan poligon baru hasil gambar tangan ke Supabase
+  const handleFeatureCreate = async (geometry: any) => {
+    try {
+      const namaTabelAktif = activeTables[0];
+      const cleanedGeom = stripZDimension(geometry);
+
+      // Data awal kosong atau default untuk poligon baru
+      const newData = {
+        geom: cleanedGeom,
+        nop_pengukuran: '',
+        wp_pengukuran: '',
+        jenis_input_data: 'A. PEREKAMAN DATA',
+      };
+
+      const { data, error } = await supabase
+        .from(namaTabelAktif)
+        .insert([newData])
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      alert("Poligon baru berhasil disimpan! Silakan isi atributnya.");
+      
+      // Pilih data baru tersebut agar form langsung terbuka dan bisa diedit
+      setSelectedFeature(data as unknown as SurveyProperties);
+      setFormData(data);
+      setEditMode(true);
+      setSheetOpen(true);
+      
+      // Refresh peta agar poligon dari database langsung tampil
+      setMapRefreshTrigger(prev => prev + 1);
+
+    } catch (error: any) {
+      alert("Gagal menyimpan poligon baru: " + error.message);
+    }
+  };
+
   // Fungsi klik yang sudah diperbarui (menimpa baris 152-157 Anda)
   const handleFeatureSelect = (properties: SurveyProperties) => {
     setSelectedFeature(properties)
@@ -414,6 +452,7 @@ useEffect(() => {
         basemap={basemap}
         activeTableIds={activeTables}
         onFeatureSelect={handleFeatureSelect}
+        onFeatureCreate={handleFeatureCreate}
         refreshTrigger={mapRefreshTrigger}
         locateTrigger={locateTrigger}
       />
