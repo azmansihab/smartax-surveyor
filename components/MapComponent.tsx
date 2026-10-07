@@ -59,21 +59,44 @@ interface MapComponentProps {
   locateTrigger?: number
 }
 
-// Komponen untuk membaca GPS dan menampilkan titik biru
+// Komponen untuk membaca GPS dan menampilkan titik biru secara real-time
 function LocationMarker({ trigger }: { trigger: number }) {
-  const [position, setPosition] = useState<any>(null)
-  const map = useMap()
+  const [position, setPosition] = useState<any>(null);
+  const map = useMap();
 
+  // 1. Memulai pelacakan lokasi secara terus-menerus saat peta dimuat
   useEffect(() => {
-    if (trigger > 0) {
-      map.locate().on("locationfound", function (e) {
-        setPosition(e.latlng)
-        map.flyTo(e.latlng, 19, { animate: true, duration: 1.5 })
-      }).on("locationerror", function (e) {
-        alert("Gagal mendeteksi lokasi. Pastikan GPS aktif dan browser diizinkan mengakses lokasi.")
-      })
+    // watch: true membuat GPS terus memantau pergerakan
+    // enableHighAccuracy: true menggunakan sensor GPS asli HP (bukan perkiraan jaringan)
+    map.locate({ watch: true, enableHighAccuracy: true, maximumAge: 10000 });
+
+    const handleLocationFound = (e: any) => {
+      setPosition(e.latlng); // Update titik biru otomatis saat bergerak
+    };
+
+    const handleLocationError = (e: any) => {
+      console.warn("Gagal mendapatkan lokasi akurat:", e.message);
+    };
+
+    map.on("locationfound", handleLocationFound);
+    map.on("locationerror", handleLocationError);
+
+    // Hapus pelacakan jika komponen ditutup untuk menghemat baterai
+    return () => {
+      map.stopLocate();
+      map.off("locationfound", handleLocationFound);
+      map.off("locationerror", handleLocationError);
+    };
+  }, [map]);
+
+  // 2. Tombol Trigger hanya berfungsi untuk menarik layar (zoom) ke lokasi saat ini
+  useEffect(() => {
+    if (trigger > 0 && position) {
+      map.flyTo(position, 19, { animate: true, duration: 1.5 });
+    } else if (trigger > 0 && !position) {
+      alert("Sedang mencari sinyal GPS, silakan tunggu beberapa detik dan coba klik lagi.");
     }
-  }, [trigger, map])
+  }, [trigger, map, position]); // <-- Hapus 'position' dari array ini jika tidak ingin layar otomatis bergeser setiap kali Anda melangkah
 
   return position === null ? null : (
     <CircleMarker 
@@ -81,7 +104,7 @@ function LocationMarker({ trigger }: { trigger: number }) {
       radius={8} 
       pathOptions={{ color: 'white', fillColor: '#2563eb', fillOpacity: 1, weight: 3 }}
     />
-  )
+  );
 }
 
 // Pemetaan kontrol Geoman
