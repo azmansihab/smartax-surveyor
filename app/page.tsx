@@ -45,6 +45,7 @@ const OPT_KONSTRUKSI = ['A. Baja', 'B. Beton', 'C. Batu Bata', 'D. Kayu']; //[ci
 const OPT_ATAP = ['A. Decrabon / Beton / Genteng / Genteng Glazur / Bitumen', 'B. Genteng Beton / Aluminium / PVC', 'C. Genteng Biasa / Sirap / Polycarbonat / GRC', 'D. Asbes', 'E. Seng']; //[cite: 31]
 const OPT_LANTAI = ['A. Marmer / Granit / PVC / Homogeneous Tile / Vinyl', 'B. Keramik Standar / Epoxy', 'C. Teraso', 'D. Ubin PC / Papan', 'E. Semen']; //[cite: 33]
 const OPT_LANGIT = ['A. Akustik / Jati / PVC / GRC / Gypsum', 'B. Triplek / Asbes / Bambu', 'C. Tidak Ada']; //[cite: 34]
+const OPT_DINDING = ['A. Kaca / Alumunium / ACP / Jati / GRC / Gypsum', 'B. Beton / Beton Pracetak', 'C. Batu Bata / Conblok / Batako / Batu Ringan', 'D. Kayu', 'E. Seng']
 
 export default function SmartaxSurveyorPage() {
   const [isDark, setIsDark] = useState(false);
