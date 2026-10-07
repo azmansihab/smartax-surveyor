@@ -45,7 +45,26 @@ const OPT_KONSTRUKSI = ['A. Baja', 'B. Beton', 'C. Batu Bata', 'D. Kayu']; //[ci
 const OPT_ATAP = ['A. Decrabon / Beton / Genteng / Genteng Glazur / Bitumen', 'B. Genteng Beton / Aluminium / PVC', 'C. Genteng Biasa / Sirap / Polycarbonat / GRC', 'D. Asbes', 'E. Seng']; //[cite: 31]
 const OPT_LANTAI = ['A. Marmer / Granit / PVC / Homogeneous Tile / Vinyl', 'B. Keramik Standar / Epoxy', 'C. Teraso', 'D. Ubin PC / Papan', 'E. Semen']; //[cite: 33]
 const OPT_LANGIT = ['A. Akustik / Jati / PVC / GRC / Gypsum', 'B. Triplek / Asbes / Bambu', 'C. Tidak Ada']; //[cite: 34]
-const OPT_DINDING = ['A. Kaca / Alumunium / ACP / Jati / GRC / Gypsum', 'B. Beton / Beton Pracetak', 'C. Batu Bata / Conblok / Batako / Batu Ringan', 'D. Kayu', 'E. Seng']
+const OPT_KLASIFIKASI_JPB = ['1. HUNIAN', '2. NON HUNIAN'];
+const OPT_HASIL_LAPANGAN = [
+  '1. JPB BERUBAH - LUAS BUMI / BANGUNAN TETAP (PETA KERJA)',
+  '2. JPB TETAP - LUAS BUMI / BANGUNAN TETAP (PETA KERJA)',
+  '3. JPB BERUBAH - LUAS BUMI / BANGUNAN TETAP (REKOMENDASI UPPPD)',
+  '4. JPB TETAP - LUAS BUMI / BANGUNAN TETAP (REKOMENDASI UPPPD)',
+  '5. TANAH KOSONG MENJADI TERBANGUN (PETA KERJA / REKOMENDASI UPPPD)',
+  '6. JPB BERUBAH - LUAS BUMI / BANGUNAN BERUBAH (PETA KERJA)',
+  '7. JPB TETAP - LUAS BUMI / BANGUNAN BERUBAH (PETA KERJA)',
+  '8. JPB BERUBAH - LUAS BUMI / BANGUNAN BERUBAH (REKOMENDASI UPPPD)',
+  '9. JPB TETAP - LUAS BUMI / BANGUNAN BERUBAH (REKOMENDASI UPPPD)',
+  '10. TERBANGUN MENJADI TANAH KOSONG (PETA KERJA / REKOMENDASI UPPPD)'
+];
+const OPT_DINDING = [
+  'A. Kaca / Alumunium / ACP Jati / GRC / Gypsum',
+  'B. Beton / Beton Pracetak',
+  'C. Batu Bata / Conblok / Batako / Bata Ringan',
+  'D. Kayu',
+  'E. Seng'
+];
 
 export default function SmartaxSurveyorPage() {
   const [isDark, setIsDark] = useState(false);
@@ -874,6 +893,21 @@ useEffect(() => {
                     <select className="w-full rounded-md border border-slate-300 p-2 text-sm text-slate-800 bg-white focus:border-blue-500 focus:outline-none" value={formData[namaKolom] || ''} onChange={(e) => handleInputChange(namaKolom, e.target.value)}>
                       <option value="">-- Pilih Langit-Langit --</option>
                       {OPT_LANGIT.map(o => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                  ) : activeTables.includes('bangunan_raw') && kolomKecil === 'klasifikasi_jpb' ? (
+                    <select className="w-full rounded-md border border-slate-300 p-2 text-sm text-slate-800 bg-white focus:border-blue-500 focus:outline-none" value={formData[namaKolom] || ''} onChange={(e) => handleInputChange(namaKolom, e.target.value)}>
+                      <option value="">-- Pilih Klasifikasi JPB --</option>
+                      {OPT_KLASIFIKASI_JPB.map(o => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                  ) : activeTables.includes('bangunan_raw') && kolomKecil === 'hasil_lapangan' ? (
+                    <select className="w-full rounded-md border border-slate-300 p-2 text-sm text-slate-800 bg-white focus:border-blue-500 focus:outline-none" value={formData[namaKolom] || ''} onChange={(e) => handleInputChange(namaKolom, e.target.value)}>
+                      <option value="">-- Pilih Hasil Lapangan --</option>
+                      {OPT_HASIL_LAPANGAN.map(o => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                  ) : activeTables.includes('bangunan_raw') && kolomKecil === 'dinding' ? (
+                    <select className="w-full rounded-md border border-slate-300 p-2 text-sm text-slate-800 bg-white focus:border-blue-500 focus:outline-none" value={formData[namaKolom] || ''} onChange={(e) => handleInputChange(namaKolom, e.target.value)}>
+                      <option value="">-- Pilih Dinding --</option>
+                      {OPT_DINDING.map(o => <option key={o} value={o}>{o}</option>)}
                     </select>
                   ) : activeTables.includes('bangunan_raw') && ['jumlah_lantai', 'jumlah_bangunan', 'tahun_dibangun', 'tahun_direnovasi', 'daya_listrik_terpasang_watt'].includes(kolomKecil) ? (
                     <input
