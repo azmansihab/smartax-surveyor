@@ -8,6 +8,7 @@ import {
   GeoJSON,
   useMap,
   CircleMarker,
+  Circle,
 } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -59,19 +60,19 @@ interface MapComponentProps {
   locateTrigger?: number
 }
 
-// Komponen untuk membaca GPS dan menampilkan titik biru secara real-time
+// Komponen untuk membaca GPS dan menampilkan titik biru beserta radius akurasi
 function LocationMarker({ trigger }: { trigger: number }) {
   const [position, setPosition] = useState<any>(null);
+  const [accuracy, setAccuracy] = useState<number>(0); // Menyimpan radius error GPS dalam meter
   const map = useMap();
 
-  // 1. Memulai pelacakan lokasi secara terus-menerus saat peta dimuat
+  // 1. Memulai pelacakan lokasi secara diam-diam di latar belakang
   useEffect(() => {
-    // watch: true membuat GPS terus memantau pergerakan
-    // enableHighAccuracy: true menggunakan sensor GPS asli HP (bukan perkiraan jaringan)
     map.locate({ watch: true, enableHighAccuracy: true, maximumAge: 10000 });
 
     const handleLocationFound = (e: any) => {
-      setPosition(e.latlng); // Update titik biru otomatis saat bergerak
+      setPosition(e.latlng);
+      setAccuracy(e.accuracy); // Mengambil tingkat akurasi dari sensor HP
     };
 
     const handleLocationError = (e: any) => {
@@ -81,7 +82,6 @@ function LocationMarker({ trigger }: { trigger: number }) {
     map.on("locationfound", handleLocationFound);
     map.on("locationerror", handleLocationError);
 
-    // Hapus pelacakan jika komponen ditutup untuk menghemat baterai
     return () => {
       map.stopLocate();
       map.off("locationfound", handleLocationFound);
@@ -89,21 +89,30 @@ function LocationMarker({ trigger }: { trigger: number }) {
     };
   }, [map]);
 
-  // 2. Tombol Trigger hanya berfungsi untuk menarik layar (zoom) ke lokasi saat ini
+  // 2. Tombol Trigger HANYA menggeser layar ketika tombol diklik (tidak auto-zoom lagi)
   useEffect(() => {
     if (trigger > 0 && position) {
       map.flyTo(position, 19, { animate: true, duration: 1.5 });
     } else if (trigger > 0 && !position) {
       alert("Sedang mencari sinyal GPS, silakan tunggu beberapa detik dan coba klik lagi.");
     }
-  }, [trigger, map, position]); // <-- Hapus 'position' dari array ini jika tidak ingin layar otomatis bergeser setiap kali Anda melangkah
+  }, [trigger, map]); // <--- 'position' telah dihapus dari array ini agar tidak mengganggu layar
 
   return position === null ? null : (
-    <CircleMarker 
-      center={position} 
-      radius={8} 
-      pathOptions={{ color: 'white', fillColor: '#2563eb', fillOpacity: 1, weight: 3 }}
-    />
+    <>
+      {/* Lingkaran biru memudar (menunjukkan seberapa meleset/akurat sinyal saat ini) */}
+      <Circle 
+        center={position} 
+        radius={accuracy} 
+        pathOptions={{ color: '#3b82f6', fillColor: '#3b82f6', fillOpacity: 0.15, stroke: false }} 
+      />
+      {/* Titik biru solid di tengah */}
+      <CircleMarker 
+        center={position} 
+        radius={7} 
+        pathOptions={{ color: 'white', fillColor: '#2563eb', fillOpacity: 1, weight: 2 }}
+      />
+    </>
   );
 }
 
