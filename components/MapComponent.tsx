@@ -9,6 +9,7 @@ import {
   useMap,
   CircleMarker,
   Circle,
+  LayersControl,
 } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -16,6 +17,8 @@ import '@geoman-io/leaflet-geoman-free'
 import '@geoman-io/leaflet-geoman-free/dist/leaflet-geoman.css'
 import { createClient } from '@supabase/supabase-js'
 import type { Feature, FeatureCollection, Geometry } from 'geojson'
+import parseGeoraster from 'georaster';
+import GeoRasterLayer from 'georaster-layer-for-leaflet';
 
 // Perbaikan default marker icon Leaflet yang rusak akibat bundling Next.js
 // @ts-expect-error - properti internal Leaflet, tidak ada di tipe publik
@@ -43,6 +46,7 @@ export interface SurveyProperties {
 export type BasemapConfig =
   | { type: 'osm' }
   | { type: 'dark' }
+  | { type: 'none' }
   | { type: 'wms'; url: string; layers: string }
   | { type: 'xyz'; url: string }
 
@@ -58,6 +62,71 @@ interface MapComponentProps {
   customXyzUrl?: string
   refreshTrigger?: number
   locateTrigger?: number
+  showDroneImagery?: boolean
+}
+
+function COGLayer({ url }: { url: string }) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!map || !url) return;
+
+    let layer: any = null;
+    let isMounted = true;
+
+    // Tambahkan tipe ': any' di dalam kurung parameter georaster
+    parseGeoraster(url).then((georaster: any) => { 
+      if (!isMounted) return;
+      layer = new GeoRasterLayer({
+        georaster: georaster,
+        opacity: 1,
+        resolution: 256, 
+        // Tambahkan koma setelah 256, lalu sisipkan fungsi ini:
+        pixelValuesToColorFn: (values: any) => {
+          if (values[0] === undefined) return null;
+
+          // Baca nilai Y, Cb, dan Cr dari file JPEG-COG
+          const y = values[0];
+          const cb = values[1];
+          const cr = values[2];
+
+          // Konversi matematis format YCbCr kembali menjadi RGB murni
+          let r = Math.round(y + 1.402 * (cr - 128));
+          let g = Math.round(y - 0.344136 * (cb - 128) - 0.714136 * (cr - 128));
+          let b = Math.round(y + 1.772 * (cb - 128));
+
+          // Kunci rentang warna agar tidak bocor (wajib di antara 0 hingga 255)
+          r = Math.max(0, Math.min(255, r));
+          g = Math.max(0, Math.min(255, g));
+          b = Math.max(0, Math.min(255, b));
+
+          // Sembunyikan piksel latar belakang (putih bersih atau hitam pekat)
+          if ((r >= 250 && g >= 250 && b >= 250) || (r === 0 && g === 0 && b === 0)) {
+            return null; // Render sebagai transparan
+          }
+
+          // Tampilkan warna bangunan aslinya
+          return `rgb(${r}, ${g}, ${b})`;
+        }
+      });
+      layer.addTo(map);
+      
+      map.fitBounds(layer.getBounds());
+      
+    // Tambahkan tipe ': any' di dalam kurung parameter err
+    }).catch((err: any) => {
+      console.error("Gagal memuat citra satelit:", err);
+    });
+
+    return () => {
+      isMounted = false;
+      if (layer && map) {
+        map.removeLayer(layer);
+      }
+    };
+  }, [map, url]);
+
+  return null;
 }
 
 // Komponen untuk membaca GPS dan menampilkan titik biru beserta radius akurasi
@@ -191,7 +260,8 @@ export default function MapComponent({
   wmsLayers, 
   customXyzUrl,
   refreshTrigger,
-  locateTrigger
+  locateTrigger,
+  showDroneImagery = true,
 }: MapComponentProps) {
   const [layers, setLayers] = useState<Record<string, FeatureCollection>>({})
   const geoJsonRefs = useRef<Record<string, L.GeoJSON>>({})
@@ -246,24 +316,24 @@ export default function MapComponent({
     <MapContainer
       center={[-6.1751, 106.8650]}
       zoom={13}
+      maxZoom={24} // <-- 1. Tambahkan batas maksimal zoom pada kanvas utama
       zoomControl={false}
       attributionControl={false}
       className="absolute inset-0 z-0 h-full w-full"
     >
       {basemap.type === 'osm' && (
-        <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}" />
+        <TileLayer 
+          url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}" 
+          maxNativeZoom={19} // <-- 2. Hentikan unduhan tile OSM di level 19 (batas maksimal bawaan)
+          maxZoom={24}       // <-- 3. Izinkan gambar tile ditarik/diperbesar hingga level 24
+        />
       )}
 
       {basemap.type === 'dark' && (
-        <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" />
-      )}
-
-      {customXyzUrl && customXyzUrl.trim() !== '' && (
-        <TileLayer
-          key={customXyzUrl}
-          url={customXyzUrl}
-          maxZoom={22}
-          zIndex={5}
+        <TileLayer 
+          url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" 
+          maxNativeZoom={19} 
+          maxZoom={24} 
         />
       )}
 
@@ -309,6 +379,9 @@ export default function MapComponent({
       <GeomanControls editMode={editMode} />
       <LocationMarker trigger={locateTrigger || 0} />
       <DrawListener onFeatureCreate={onFeatureCreate} />
+      {showDroneImagery && (
+        <COGLayer url="https://ntnjmzknnlcwyvnohylw.supabase.co/storage/v1/object/public/citra_udara/citra_udara_cempaka_baru.tif" />
+      )}
     </MapContainer>
   )
 }

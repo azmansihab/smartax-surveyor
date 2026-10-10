@@ -67,6 +67,7 @@ const OPT_DINDING = [
 ];
 
 export default function SmartaxSurveyorPage() {
+  const [showDroneImagery, setShowDroneImagery] = useState(true);
   const [isDark, setIsDark] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
   const [panelTab, setPanelTab] = useState<'layers' | 'basemap'>('layers');
@@ -572,6 +573,16 @@ useEffect(() => {
 
             {panelTab === 'basemap' && (
               <>
+              {/* Tambahkan tombol Tanpa Basemap ini */}
+                <button
+                  type="button"
+                  onClick={() => setBasemap({ type: 'none' })}
+                  className={`w-full rounded-lg px-3 py-2 text-left text-sm font-medium ${
+                    basemap.type === 'none' ? 'bg-red-50 text-red-600' : 'text-slate-600'
+                  }`}
+                >
+                  🚫 Tanpa Basemap
+                </button>
                 <button
                   type="button"
                   onClick={() => setBasemap({ type: 'osm' })}
@@ -629,6 +640,18 @@ useEffect(() => {
                   >
                     Terapkan XYZ
                   </button>
+                </div>
+                <div className="space-y-2 pt-4 mt-2 border-t border-slate-200">
+                  <p className="text-xs font-semibold text-slate-500">Overlay Citra</p>
+                  <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={showDroneImagery}
+                      onChange={(e) => setShowDroneImagery(e.target.checked)}
+                      className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                    />
+                    Tampilkan Citra Drone (COG)
+                  </label>
                 </div>
               </>
             )}
