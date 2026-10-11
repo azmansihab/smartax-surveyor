@@ -113,6 +113,7 @@ export default function SmartaxSurveyorPage() {
   const [viewingTableId, setViewingTableId] = useState<string | null>(null);
   const [layerTableData, setLayerTableData] = useState<any[]>([]);
   const [isLoadingTable, setIsLoadingTable] = useState(false);
+  const [highlightedRowId, setHighlightedRowId] = useState<any>(null);
 
   // 1. State untuk menyimpan data form yang sedang diedit
   const [formData, setFormData] = useState<Record<string, any>>({});
@@ -476,6 +477,7 @@ useEffect(() => {
         onFeatureCreate={handleFeatureCreate}
         refreshTrigger={mapRefreshTrigger}
         locateTrigger={locateTrigger}
+        highlightedFeatureId={highlightedRowId}
       />
 
       {/* Kiri atas: branding KSC ala urban/graffiti */}
@@ -803,17 +805,27 @@ useEffect(() => {
                       </tr>
                     </thead>
                     <tbody>
-                      {layerTableData.map((row, idx) => (
-                        <tr key={idx} className="hover:bg-emerald-50 transition-colors">
-                          {Object.keys(row)
-                            .filter(k => k.toLowerCase() !== 'geom')
-                            .map(key => (
-                            <td key={key} className="border-b border-r border-slate-200 p-2 whitespace-nowrap text-slate-600">
-                              {row[key] !== null ? String(row[key]) : '-'}
-                            </td>
-                          ))}
-                        </tr>
-                      ))}
+                      {layerTableData.map((row, idx) => {
+                        // Cari ID unik dari baris ini (sesuaikan dengan format PostGIS/SHP Anda)
+                        const rowId = row.id || row.gid || row.objectid || row.OBJECTID;
+                        const isSelected = highlightedRowId === rowId;
+                        
+                        return (
+                          <tr 
+                            key={idx} 
+                            onClick={() => setHighlightedRowId(rowId)}
+                            className={`transition-colors cursor-pointer ${isSelected ? 'bg-amber-100 hover:bg-amber-200' : 'hover:bg-emerald-50'}`}
+                          >
+                            {Object.keys(row)
+                              .filter(k => k.toLowerCase() !== 'geom')
+                              .map(key => (
+                              <td key={key} className={`border-b border-r border-slate-200 p-2 whitespace-nowrap ${isSelected ? 'text-amber-900 font-medium' : 'text-slate-600'}`}>
+                                {row[key] !== null ? String(row[key]) : '-'}
+                              </td>
+                            ))}
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                   {layerTableData.length === 0 && (

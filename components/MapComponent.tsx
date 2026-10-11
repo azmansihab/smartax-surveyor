@@ -63,6 +63,7 @@ interface MapComponentProps {
   refreshTrigger?: number
   locateTrigger?: number
   showDroneImagery?: boolean
+  highlightedFeatureId?: any
 }
 
 function COGLayer({ url }: { url: string }) {
@@ -262,6 +263,7 @@ export default function MapComponent({
   refreshTrigger,
   locateTrigger,
   showDroneImagery = true,
+  highlightedFeatureId,
 }: MapComponentProps) {
   const [layers, setLayers] = useState<Record<string, FeatureCollection>>({})
   const geoJsonRefs = useRef<Record<string, L.GeoJSON>>({})
@@ -311,6 +313,48 @@ export default function MapComponent({
       geom: feature.geometry
     })
   }
+
+  // Efek khusus untuk menyorot dan zoom ke poligon yang diklik di tabel atribut
+  useEffect(() => {
+    const mapInstance = geoJsonRefs.current[activeTableIds[0]]?.resetStyle; 
+    const map = (geoJsonRefs.current[activeTableIds[0]] as any)?._map;
+
+    if (!map) return;
+
+    Object.values(geoJsonRefs.current).forEach((geoJsonInstance) => {
+      if (!geoJsonInstance) return;
+      
+      geoJsonInstance.eachLayer((layer: any) => {
+        const props = layer.feature.properties;
+        // Cek kecocokan ID poligon dengan ID baris tabel
+        const isHighlighted = highlightedFeatureId && 
+          (props.id === highlightedFeatureId || props.gid === highlightedFeatureId || props.objectid === highlightedFeatureId || props.OBJECTID === highlightedFeatureId);
+          
+        if (isHighlighted) {
+          // 1. Ubah warna poligon menjadi kuning menyala
+          layer.setStyle({
+            color: '#f59e0b',
+            weight: 4,
+            fillColor: '#fde047',
+            fillOpacity: 0.8,
+          });
+          
+          // 2. Terbang (zoom) ke lokasi poligon tersebut
+          if (layer.getBounds) {
+            map.flyToBounds(layer.getBounds(), { duration: 1.5, maxZoom: 21 });
+          }
+        } else {
+          // Kembalikan poligon lain ke warna hijau standar
+          layer.setStyle({
+            color: isDark ? '#34d399' : '#059669',
+            weight: 2,
+            fillColor: isDark ? '#34d399' : '#10b981',
+            fillOpacity: 0.4,
+          });
+        }
+      });
+    });
+  }, [highlightedFeatureId, activeTableIds, isDark]);
 
   return (
     <MapContainer
