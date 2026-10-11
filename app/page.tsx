@@ -105,7 +105,7 @@ export default function SmartaxSurveyorPage() {
   const [wmsLayers, setWmsLayers] = useState('')
   const [customXyzUrl, setCustomXyzUrl] = useState('')
 
-  const [activeTables, setActiveTables] = useState<string[]>(['bidang_pajak_utama'])
+  const [activeTables, setActiveTables] = useState<string[]>(['bangunan_raw'])
 
   const [sheetOpen, setSheetOpen] = useState(false)
   const [sheetSize, setSheetSize] = useState<'half' | 'full'>('half');
